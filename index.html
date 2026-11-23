@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cabina">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>Cabina</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;touch-action:none}
+canvas{position:fixed;inset:0;display:block}
+#sa{position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+button{font:inherit;color:inherit;cursor:pointer}
+#bar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 12px) 6px calc(env(safe-area-inset-left) + 12px)}
+.pill{height:36px;display:flex;align-items:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:18px;font-size:14px;font-weight:600;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+#nav button{background:none;border:0;height:34px;width:34px;font-size:20px;line-height:1;color:rgba(255,255,255,.7)}
+#nav span{min-width:92px;text-align:center;white-space:nowrap}
+#gps{padding:0 12px;font-size:12px;font-weight:600;gap:6px;color:rgba(255,255,255,.8);white-space:nowrap}
+#gps i{width:8px;height:8px;border-radius:4px;background:#ff453a;display:inline-block}
+#gear{width:36px;justify-content:center;border:1px solid rgba(255,255,255,.12);padding:0}
+#gear svg{width:19px;height:19px}
+.right{display:flex;gap:8px}
+#dots{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 10px);display:flex;justify-content:center;gap:7px;z-index:4;pointer-events:none}
+.dot{width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.25);transition:all .25s}
+.dot.on{width:18px;background:rgba(255,255,255,.85)}
+#actCtl{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 28px);display:none;justify-content:center;gap:12px;z-index:4}
+#actCtl button{height:48px;padding:0 24px;border-radius:24px;border:0;font-size:16px;font-weight:700;background:#23272e;color:#fff}
+#actCtl #btnPause{background:var(--acc,#38f28a);color:#000;min-width:140px}
+#start{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px;
+  background:radial-gradient(120% 80% at 50% 30%,#14202b 0%,#05070a 70%)}
+#start h1{font-size:40px;margin:18px 0 6px;letter-spacing:.5px}
+#start p{color:#9aa5b1;max-width:340px;line-height:1.45;margin:0 0 26px;font-size:15px}
+#start .go{height:54px;width:260px;border-radius:27px;border:0;background:#38f28a;color:#00140a;font-size:18px;font-weight:700}
+#start .demo{margin-top:14px;background:none;border:0;color:#8fd3ff;font-size:15px;padding:10px}
+#start small{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 18px);left:24px;right:24px;color:#5c6670;font-size:12px;line-height:1.4}
+@media (max-height:500px){#start svg{width:56px;height:56px}#start h1{font-size:28px;margin:6px 0 4px}#start p{margin-bottom:12px;font-size:14px}#start .demo{margin-top:4px}#start small{display:none}}
+#sheet{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.55);display:none}
+#sheet.open{display:block}
+.panel{position:absolute;left:0;right:0;bottom:0;max-height:90%;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;
+  background:#14171c;border-radius:22px 22px 0 0;padding:6px 18px calc(env(safe-area-inset-bottom) + 20px);max-width:640px;margin:0 auto}
+.grab{width:40px;height:5px;border-radius:3px;background:#3a3f47;margin:6px auto 10px}
+.panel h2{font-size:20px;margin:4px 0 10px;display:flex;justify-content:space-between;align-items:center}
+.panel h2 button{background:#23272e;border:0;border-radius:16px;height:32px;padding:0 14px;font-size:14px;font-weight:600}
+.sec{color:#7b8591;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;margin:18px 0 6px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #22262d;font-size:15px}
+.row:last-child{border-bottom:0}
+.row .hint{display:block;color:#7b8591;font-size:12px;margin-top:2px}
+select,input[type=number]{background:#23272e;color:#fff;border:0;border-radius:9px;padding:8px 10px;font-size:15px;-webkit-user-select:auto;user-select:auto;max-width:52%}
+input[type=number]{width:90px;text-align:right}
+.chips{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0 6px}
+.chip{border:0;border-radius:17px;height:34px;padding:0 14px;background:#23272e;font-size:14px;font-weight:600}
+.chip.on{background:var(--acc,#38f28a);color:#000}
+.sw{display:flex;gap:10px}
+.sw button{width:30px;height:30px;border-radius:15px;border:2px solid transparent}
+.sw button.on{border-color:#fff;box-shadow:0 0 0 2px #14171c inset}
+.tg{position:relative;width:51px;height:31px;flex:none}
+.tg input{opacity:0;width:0;height:0;position:absolute}
+.tg span{position:absolute;inset:0;background:#39393d;border-radius:16px;transition:.2s}
+.tg span:before{content:"";position:absolute;width:27px;height:27px;left:2px;top:2px;background:#fff;border-radius:14px;transition:.2s}
+.tg input:checked+span{background:var(--acc,#38f28a)}
+.tg input:checked+span:before{transform:translateX(20px)}
+.btns{display:flex;gap:10px;margin-top:14px}
+.btns button{flex:1;height:44px;border-radius:12px;border:0;background:#23272e;font-size:15px;font-weight:600}
+.btns button.warn{color:#ff6961}
+.foot{color:#5c6670;font-size:12px;line-height:1.45;margin-top:16px}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 56px);transform:translateX(-50%);background:rgba(30,34,40,.95);border:1px solid #333;color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;z-index:40;opacity:0;transition:opacity .3s;pointer-events:none;max-width:88%;text-align:center}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="sa"></div>
+
+<div id="bar">
+  <div class="pill" id="nav"><button id="prev" aria-label="Cabina anterior">‹</button><span id="tname">Deportivo</span><button id="next" aria-label="Cabina siguiente">›</button></div>
+  <div class="right">
+    <div class="pill" id="gps"><i></i><span>GPS</span></div>
+    <button class="pill" id="gear" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+  </div>
+</div>
+<div id="dots"></div>
+<div id="actCtl"><button id="btnPause">Pausar</button><button id="btnReset">Reiniciar</button></div>
+
+<div id="start">
+  <svg width="96" height="96" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#0b1016" stroke="#26303a" stroke-width="2"/><path d="M22 70 A32 32 0 1 1 78 70" fill="none" stroke="#26303a" stroke-width="7" stroke-linecap="round"/><path d="M22 70 A32 32 0 0 1 66 24" fill="none" stroke="#38f28a" stroke-width="7" stroke-linecap="round"/><line x1="50" y1="54" x2="68" y2="30" stroke="#ff453a" stroke-width="4" stroke-linecap="round"/><circle cx="50" cy="54" r="6" fill="#fff"/></svg>
+  <h1>Cabina</h1>
+  <p>Velocímetro, rumbo, altitud y horizonte artificial con el GPS y los sensores de tu iPhone. Desliza para cambiar de cabina.</p>
+  <button class="go" id="go">Comenzar</button>
+  <button class="demo" id="godemo">Probar en modo demo</button>
+  <small>Te pedirá permiso para ubicación y sensores de movimiento. Las mediciones son referenciales: no reemplazan el velocímetro del vehículo ni instrumentos certificados.</small>
+</div>
+
+<div id="sheet"><div class="panel" id="panel">
+  <div class="grab"></div>
+  <h2>Ajustes <button id="close">Listo</button></h2>
+
+  <div class="sec">Cabina</div>
+  <div class="chips" id="themeChips"></div>
+
+  <div class="sec">Unidades</div>
+  <div class="row"><span>Velocidad</span><select id="speedUnit"><option value="auto">Según cabina</option><option value="kmh">km/h</option><option value="mph">mph</option><option value="kn">Nudos (kt)</option><option value="ms">m/s</option></select></div>
+  <div class="row"><span>Altitud</span><select id="altUnit"><option value="auto">Según cabina</option><option value="m">Metros</option><option value="ft">Pies</option></select></div>
+  <div class="row"><span>Escala del velocímetro</span><select id="maxScale"><option value="auto">Automática</option><option>60</option><option>100</option><option>140</option><option>180</option><option>220</option><option>260</option><option>300</option><option>400</option></select></div>
+
+  <div class="sec">Alerta de velocidad</div>
+  <div class="row"><span>Límite<span class="hint" id="limHint">0 = desactivada</span></span><input type="number" id="limit" inputmode="numeric" min="0" step="1"></div>
+  <div class="row"><span>Sonido de alerta<span class="hint">Se silencia con el interruptor de silencio</span></span><label class="tg"><input type="checkbox" id="sound"><span></span></label></div>
+
+  <div class="sec">Apariencia</div>
+  <div class="row"><span>Color de acento</span><div class="sw" id="swatches"></div></div>
+  <div class="row"><span>HUD en espejo<span class="hint">Para reflejar en el parabrisas de noche</span></span><label class="tg"><input type="checkbox" id="mirror"><span></span></label></div>
+  <div class="row"><span>Suavizado de aguja</span><select id="smoothing"><option value="low">Bajo (rápido)</option><option value="med">Medio</option><option value="high">Alto (estable)</option></select></div>
+
+  <div class="sec">Sistema</div>
+  <div class="row"><span>Pantalla siempre encendida</span><label class="tg"><input type="checkbox" id="wake"><span></span></label></div>
+  <div class="row"><span>Modo demo<span class="hint">Simula un viaje para probar las cabinas</span></span><label class="tg"><input type="checkbox" id="demo"><span></span></label></div>
+
+  <div class="btns"><button id="calib">Calibrar horizonte</button><button class="warn" id="resetTrip">Reiniciar viaje</button></div>
+  <div class="foot">Calibrar horizonte: deja el teléfono fijo en su soporte, en la posición en que lo usarás, y toca el botón. Así el horizonte artificial y la fuerza G quedan en cero.<br><br>Velocidad, rumbo y altitud vienen del GPS (la altitud del GPS suele tener ±10–20 m de error). Con el vehículo detenido el rumbo usa la brújula.</div>
+</div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ---------- utilidades ---------- */
+const $ = s => document.querySelector(s);
+const DEG = Math.PI / 180;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const F_SYS = '-apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+const F_DIG = 'ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif';
+const F_MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+const F_CLASSIC = '"Avenir Next Condensed", "Futura", "Arial Narrow", sans-serif';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+
+/* ---------- ajustes ---------- */
+const DEFAULTS = { theme: 'deportivo', speedUnit: 'auto', altUnit: 'auto', maxScale: 'auto', limit: 0, sound: true,
+  accent: '#38f28a', mirror: false, smoothing: 'med', wake: true, demo: false, rollOff: 0, pitchOff: 0, gsign: 0 };
+const S = Object.assign({}, DEFAULTS, store.get('cabina.settings', {}));
+const saveS = () => store.set('cabina.settings', S);
+
+const SPEED = { kmh: { f: 3.6, l: 'km/h' }, mph: { f: 2.2369363, l: 'mph' }, kn: { f: 1.9438445, l: 'kt' }, ms: { f: 1, l: 'm/s' } };
+const ALT = { m: { f: 1, l: 'm' }, ft: { f: 3.28084, l: 'ft' } };
+const AUTO_MAX = { kmh: 220, mph: 140, kn: 160, ms: 60 };
+const ACCENTS = ['#38f28a', '#35d0ff', '#ffb020', '#ff5a4f', '#c58cff', '#f2f2f2'];
+
+const THEMES = [
+  { id: 'deportivo', name: 'Deportivo', sp: 'kmh', al: 'm', draw: () => drawGaugeCockpit(STYLE_SPORT) },
+  { id: 'clasico', name: 'Clásico', sp: 'kmh', al: 'm', draw: () => drawGaugeCockpit(STYLE_CLASSIC) },
+  { id: 'avion', name: 'Avión', sp: 'kn', al: 'ft', draw: () => drawPFD() },
+  { id: 'hud', name: 'HUD', sp: 'kmh', al: 'm', draw: () => drawHUD() },
+  { id: 'actividad', name: 'Running / Bici', sp: 'kmh', al: 'm', draw: () => drawActivity() },
+];
+const theme = () => THEMES.find(t => t.id === S.theme) || THEMES[0];
+const spU = () => S.speedUnit !== 'auto' ? S.speedUnit : theme().sp;
+const alU = () => S.altUnit !== 'auto' ? S.altUnit : theme().al;
+const scaleMax = () => S.maxScale !== 'auto' ? +S.maxScale : AUTO_MAX[spU()];
+const distU = () => spU() === 'mph' ? { m: 1609.344, l: 'mi' } : spU() === 'kn' ? { m: 1852, l: 'nm' } : { m: 1000, l: 'km' };
+
+/* ---------- estado de sensores y viaje ---------- */
+const D = { speed: 0, raw: 0, gpsHdg: null, compass: null, alt: null, vs: 0, acc: null, gpsOk: false, gpsErr: null,
+  lastFix: 0, pitch: 0, roll: 0, rawPitch: 0, rawRoll: 0, gLat: 0, gLon: 0, hasMotion: false };
+const newTrip = () => ({ dist: 0, time: 0, moving: 0, max: 0, gain: 0, base: null, running: true });
+const TR = Object.assign(newTrip(), store.get('cabina.trip', {}));
+let TD = newTrip(); // viaje del modo demo
+const trip = () => S.demo ? TD : TR;
+const heading = () => D.gpsHdg != null ? D.gpsHdg : D.compass;
+
+/* ---------- formato ---------- */
+const CARD = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+const cardinal = h => CARD[Math.round(((h % 360) + 360) % 360 / 45) % 8];
+const fSpeed = ms => { const v = ms * SPEED[spU()].f; return spU() === 'ms' ? v.toFixed(1) : String(Math.round(v)); };
+const fAlt = m => m == null ? '---' : String(Math.round(m * ALT[alU()].f));
+function fDist(m) { const u = distU(); const v = m / u.m; return { v: v < 10 ? v.toFixed(2) : v < 1000 ? v.toFixed(1) : Math.round(v).toString(), u: u.l }; }
+function fTime(s) { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
+function fPace(secPerUnit) { if (!isFinite(secPerUnit) || secPerUnit <= 0 || secPerUnit > 3600) return '--:--';
+  const m = Math.floor(secPerUnit / 60), s = Math.round(secPerUnit % 60); return m + ':' + String(s === 60 ? 59 : s).padStart(2, '0'); }
+const paceUnit = () => spU() === 'mph' ? { m: 1609.344, l: '/mi' } : { m: 1000, l: '/km' };
+function fVS(ms) { if (alU() === 'ft') { const v = Math.round(ms * 196.85 / 10) * 10; return { v: (v > 0 ? '+' : '') + v, u: 'fpm' }; }
+  const v = ms.toFixed(1); return { v: (ms > 0 ? '+' : '') + v, u: 'm/s' }; }
+
+/* ---------- canvas ---------- */
+const cv = $('#c'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+const SA = { t: 0, r: 0, b: 0, l: 0 };
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 3); W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const cs = getComputedStyle($('#sa'));
+  SA.t = parseFloat(cs.paddingTop) || 0; SA.r = parseFloat(cs.paddingRight) || 0; SA.b = parseFloat(cs.paddingBottom) || 0; SA.l = parseFloat(cs.paddingLeft) || 0;
+}
+addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 300));
+
+function text(s, x, y, size, color, align = 'center', weight = 600, fam = F_SYS, base = 'middle') {
+  ctx.font = `${weight} ${size}px ${fam}`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(s, x, y);
+}
+function rrect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function line(x1, y1, x2, y2, color, w) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.stroke(); }
+function valueUnit(v, u, x, y, size, color, ucolor, align = 'left', fam = F_DIG) {
+  ctx.font = `700 ${size}px ${fam}`; const vw = ctx.measureText(v).width;
+  ctx.font = `600 ${size * 0.42}px ${F_SYS}`; const uw = u ? ctx.measureText(u).width + size * 0.15 : 0;
+  let sx = align === 'left' ? x : align === 'center' ? x - (vw + uw) / 2 : x - vw - uw;
+  text(v, sx, y, size, color, 'left', 700, fam, 'alphabetic');
+  if (u) text(u, sx + vw + size * 0.15, y, size * 0.42, ucolor, 'left', 600, F_SYS, 'alphabetic');
+}
+function area() { const top = SA.t + 54, bot = H - SA.b - 28; return { x: SA.l + 12, y: top, w: W - SA.l - SA.r - 24, h: bot - top }; }
+
+/* ---------- cabina de agujas (Deportivo / Clásico) ---------- */
+const STYLE_SPORT = { id: 'sport', bg1: '#0d141b', bg2: '#000', track: '#1a222b', tick: '#e8edf2', minor: '#55606b', label: '#c9d1d9',
+  red: '#ff3b30', needle: null, card: 'rgba(255,255,255,0.045)', cardLine: 'rgba(255,255,255,0.07)', lab: '#7b8591', val: '#fff', unit: '#8b96a1', font: F_SYS };
+const STYLE_CLASSIC = { id: 'classic', bg1: '#2a2018', bg2: '#0d0906', face: '#efe7d2', face2: '#d8cdb0', track: 'rgba(0,0,0,0)', tick: '#1b1712', minor: '#4a4236', label: '#1b1712',
+  red: '#b3261e', needle: '#c62d1f', card: 'rgba(239,231,210,0.06)', cardLine: 'rgba(239,231,210,0.14)', lab: '#b8a98a', val: '#efe7d2', unit: '#b8a98a', font: F_CLASSIC };
+
+function niceStep(max) { for (const s of [5, 10, 20, 25, 40, 50, 100]) if (max / s <= 12) return s; return 100; }
+
+function drawGauge(cx, cy, r, st) {
+  const su = SPEED[spU()], max = scaleMax(), v = D.speed * su.f, tr = trip();
+  const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25, A = x => a0 + (a1 - a0) * clamp(x / max, 0, 1.03);
+  const over = S.limit > 0 && D.speed > S.limit;
+  if (st.face) {
+    const bz = ctx.createLinearGradient(cx, cy - r * 1.1, cx, cy + r * 1.1);
+    bz.addColorStop(0, '#f4f4f4'); bz.addColorStop(0.45, '#8a8a8a'); bz.addColorStop(0.55, '#5a5a5a'); bz.addColorStop(1, '#d8d8d8');
+    ctx.beginPath(); ctx.arc(cx, cy, r * 1.08, 0, Math.PI * 2); ctx.fillStyle = bz; ctx.fill();
+    const fg = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);
+    fg.addColorStop(0, st.face); fg.addColorStop(1, st.face2);
+    ctx.beginPath(); ctx.arc(cx, cy, r * 1.0, 0, Math.PI * 2); ctx.fillStyle = fg; ctx.fill();
+  }
+  ctx.lineCap = 'butt';
+  if (st.id === 'sport') { ctx.beginPath(); ctx.arc(cx, cy, r * 0.93, a0, a1); ctx.strokeStyle = st.track; ctx.lineWidth = r * 0.075; ctx.stroke(); }
+  // zona roja
+  const red0 = S.limit > 0 ? S.limit * su.f : max * 0.85;
+  if (red0 < max) { ctx.beginPath(); ctx.arc(cx, cy, r * (st.face ? 0.9 : 0.93), A(red0), a1); ctx.strokeStyle = st.red;
+    ctx.globalAlpha = st.face ? 0.85 : 0.55; ctx.lineWidth = r * (st.face ? 0.05 : 0.075); ctx.stroke(); ctx.globalAlpha = 1; }
+  // arco de progreso (deportivo)
+  if (st.id === 'sport' && v > 0.2) {
+    const col = over ? '#ff453a' : S.accent;
+    ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = r * 0.12; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.93, a0, A(v)); ctx.strokeStyle = col; ctx.lineWidth = r * 0.075; ctx.stroke(); ctx.restore();
+  }
+  // marcas
+  const step = niceStep(max), mc = (step === 20 || step === 40) ? 4 : 5, ms = step / mc;
+  for (let i = 0; i * ms <= max + 1e-6; i++) {
+    const val = i * ms, a = A(val), major = i % mc === 0, ca = Math.cos(a), sa = Math.sin(a);
+    const r1 = st.face ? r * 0.94 : r * 0.84, r2 = major ? r1 - r * 0.1 : r1 - r * 0.045;
+    line(cx + ca * r1, cy + sa * r1, cx + ca * r2, cy + sa * r2, major ? st.tick : st.minor, major ? r * 0.018 : r * 0.008);
+    if (major) text(String(val), cx + ca * (r2 - r * 0.11), cy + sa * (r2 - r * 0.11), r * 0.105, st.label, 'center', st.face ? 600 : 600, st.font);
+  }
+  // marca de velocidad máxima del viaje
+  if (tr.max > 0.5) {
+    const a = A(tr.max * su.f), rr = st.face ? r * 0.99 : r * 1.0;
+    ctx.save(); ctx.translate(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); ctx.rotate(a + Math.PI / 2);
+    ctx.beginPath(); ctx.moveTo(0, r * 0.05); ctx.lineTo(-r * 0.03, -r * 0.01); ctx.lineTo(r * 0.03, -r * 0.01); ctx.closePath();
+    ctx.fillStyle = st.face ? '#1b1712' : '#ffd60a'; ctx.fill(); ctx.restore();
+  }
+  if (st.id === 'sport') {
+    // número central grande
+    valueUnit(fSpeed(D.speed), '', cx, cy + r * 0.16, r * 0.46, over ? '#ff453a' : '#fff', '', 'center');
+    text(su.l, cx, cy + r * 0.34, r * 0.1, '#8b96a1', 'center', 600);
+    const h = heading();
+    text(h == null ? '— — —' : cardinal(h) + '  ' + String(Math.round(h)).padStart(3, '0') + '°', cx, cy - r * 0.38, r * 0.085, '#8b96a1', 'center', 600);
+    if (S.limit > 0) { const lx = cx, ly = cy + r * 0.66; ctx.beginPath(); ctx.arc(lx, ly, r * 0.1, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.lineWidth = r * 0.025; ctx.strokeStyle = '#e0241b'; ctx.stroke(); text(String(Math.round(S.limit * su.f)), lx, ly + 1, r * 0.085, '#000', 'center', 800); }
+  } else {
+    text(su.l, cx, cy - r * 0.3, r * 0.08, '#4a4236', 'center', 600, F_CLASSIC);
+    // odómetro
+    const d = trip().dist / distU().m, digits = String(Math.floor(d * 10) % 1000000).padStart(6, '0');
+    const bw = r * 0.1, bh = r * 0.15, ox = cx - bw * 3, oy = cy + r * 0.36;
+    for (let i = 0; i < 6; i++) { ctx.fillStyle = i === 5 ? '#efe7d2' : '#16120e'; ctx.fillRect(ox + i * bw, oy, bw - 1.5, bh);
+      text(digits[i], ox + i * bw + bw / 2 - 0.75, oy + bh / 2 + 1, bh * 0.7, i === 5 ? '#16120e' : '#efe7d2', 'center', 600, F_MONO); }
+    text(distU().l, cx, oy + bh + r * 0.08, r * 0.065, '#4a4236', 'center', 600, F_CLASSIC);
+    // aguja
+    const a = A(v);
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
+    ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = r * 0.03; ctx.shadowOffsetY = r * 0.015;
+    ctx.beginPath(); ctx.moveTo(-r * 0.18, -r * 0.022); ctx.lineTo(r * 0.86, -r * 0.006); ctx.lineTo(r * 0.86, r * 0.006); ctx.lineTo(-r * 0.18, r * 0.022); ctx.closePath();
+    ctx.fillStyle = st.needle; ctx.fill(); ctx.restore();
+    const hub = ctx.createRadialGradient(cx - r * 0.02, cy - r * 0.02, 1, cx, cy, r * 0.08);
+    hub.addColorStop(0, '#666'); hub.addColorStop(1, '#111');
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.075, 0, Math.PI * 2); ctx.fillStyle = hub; ctx.fill();
+  }
+}
+
+function drawG(x, y, w, h, st) {
+  const r = Math.min(w * 0.36, h * 0.3), cx = x + w / 2, cy = y + h * 0.58;
+  ctx.strokeStyle = st.cardLine; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, cy, r / 2, 0, Math.PI * 2); ctx.stroke();
+  line(cx - r, cy, cx + r, cy, st.cardLine, 1); line(cx, cy - r, cx, cy + r, st.cardLine, 1);
+  const bx = clamp(-D.gLat, -1, 1) * r, by = clamp(D.gLon, -1, 1) * r;
+  ctx.beginPath(); ctx.arc(cx + bx, cy + by, Math.max(4, r * 0.16), 0, Math.PI * 2); ctx.fillStyle = st.id === 'sport' ? S.accent : '#efe7d2'; ctx.fill();
+  const g = Math.hypot(D.gLat, D.gLon);
+  text(g.toFixed(2) + ' g', x + w - 12, y + 18, 12, st.unit, 'right', 600);
+}
+
+function infoGrid(r, items, cols, st) {
+  const rows = Math.ceil(items.length / cols), gap = 8;
+  const cw = (r.w - gap * (cols - 1)) / cols, ch = Math.min((r.h - gap * (rows - 1)) / rows, 118);
+  const y0 = r.y + Math.max(0, (r.h - (ch * rows + gap * (rows - 1))) / 2);
+  items.forEach((it, i) => {
+    const x = r.x + (i % cols) * (cw + gap), y = y0 + Math.floor(i / cols) * (ch + gap);
+    rrect(x, y, cw, ch, 14); ctx.fillStyle = st.card; ctx.fill(); ctx.strokeStyle = st.cardLine; ctx.lineWidth = 1; ctx.stroke();
+    text(it.l.toUpperCase(), x + 12, y + 18, 11, st.lab, 'left', 700, F_SYS);
+    if (it.custom) return it.custom(x, y, cw, ch, st);
+    const size = Math.min(ch * 0.4, cw * 0.24);
+    valueUnit(String(it.v), it.u || '', x + 12, y + ch - Math.max(12, ch * 0.16), size, st.val, st.unit, 'left', st.id === 'classic' ? F_CLASSIC : F_DIG);
+  });
+}
+
+function drawGaugeCockpit(st) {
+  const g = ctx.createRadialGradient(W / 2, H * 0.35, 10, W / 2, H * 0.4, Math.max(W, H));
+  g.addColorStop(0, st.bg1); g.addColorStop(1, st.bg2); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const a = area(), land = a.w > a.h * 1.15, su = SPEED[spU()], tr = trip(), h = heading();
+  let cx, cy, r, info;
+  if (land) { r = Math.min(a.h * 0.44, a.w * 0.27); cx = a.x + a.w * 0.3; cy = a.y + a.h / 2 + r * 0.06; info = { x: a.x + a.w * 0.58, y: a.y, w: a.w * 0.42, h: a.h }; }
+  else { r = Math.min(a.w * 0.44, a.h * 0.3); cx = a.x + a.w / 2; cy = a.y + r * 1.1; const iy = cy + r * 1.02; info = { x: a.x, y: iy, w: a.w, h: a.y + a.h - iy - 6 }; }
+  drawGauge(cx, cy, r, st);
+  const fd = fDist(tr.dist);
+  const items = st.id === 'sport' ? [
+    { l: 'Altitud', v: fAlt(D.alt), u: ALT[alU()].l },
+    { l: 'Viaje', v: fd.v, u: fd.u },
+    { l: 'Máxima', v: fSpeed(tr.max), u: su.l },
+    { l: 'Promedio', v: tr.moving > 5 ? fSpeed(tr.dist / tr.moving) : '0', u: su.l },
+    { l: 'Tiempo', v: fTime(tr.time), u: '' },
+    { l: 'Fuerza G', custom: drawG },
+  ] : [
+    { l: 'Rumbo', v: h == null ? '---' : String(Math.round(h)).padStart(3, '0') + '°', u: h == null ? '' : cardinal(h) },
+    { l: 'Altitud', v: fAlt(D.alt), u: ALT[alU()].l },
+    { l: 'Máxima', v: fSpeed(tr.max), u: su.l },
+    { l: 'Tiempo', v: fTime(tr.time), u: '' },
+  ];
+  const cols = land ? 2 : (st.id === 'sport' ? 3 : 2);
+  infoGrid(info, items, cols, st);
+}
+
+/* ---------- cabina de avión (PFD) ---------- */
+function drawPFD() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const a = area(), su = SPEED[spU()], au = ALT[alU()];
+  const stripH = 22, headH = 48;
+  const tw = clamp(a.w * 0.17, 58, 86);
+  const top = a.y + stripH + 22, bot = a.y + a.h - headH - 14;
+  const aw = a.w - 2 * tw - 12; const ah = Math.min(bot - top, aw * 1.3);
+  const ay = top + (bot - top - ah) / 2.6, ax = a.x + tw + 6, hy = ay + ah + 14;
+  drawADI(ax, ay, aw, ah);
+  const spd = D.speed * su.f;
+  const spCfg = { kmh: [100, 5, 20], mph: [60, 5, 10], kn: [60, 5, 10], ms: [30, 1, 5] }[spU()];
+  drawTape(a.x, ay, tw, ah, spd, { range: spCfg[0], minor: spCfg[1], major: spCfg[2], min: 0, fmt: v => fSpeed(v / su.f), label: 'GS', unit: su.l }, 'L');
+  const alt = D.alt == null ? null : D.alt * au.f;
+  const alCfg = alU() === 'ft' ? [800, 100, 200] : [250, 10, 50];
+  drawTape(a.x + a.w - tw, ay, tw, ah, alt, { range: alCfg[0], minor: alCfg[1], major: alCfg[2], fmt: v => String(Math.round(v)), label: 'ALT', unit: au.l }, 'R');
+  drawHeadingTape(ax, hy, aw, headH);
+  // franja superior
+  const h = heading(), vs = fVS(D.vs);
+  const segs = [['GS', fSpeed(D.speed) + ' ' + su.l, '#4cd964'], ['TRK', h == null ? '---' : String(Math.round(h)).padStart(3, '0') + '°', '#ff4fd8'],
+    ['VS', vs.v + ' ' + vs.u, '#35d0ff'], ['GPS', D.acc == null ? '---' : '±' + Math.round(D.acc) + ' m', '#9aa5b1']];
+  const sw = a.w / 4, fs = clamp(a.w / 30, 11, 15);
+  segs.forEach((s, i) => {
+    const x = a.x + sw * i + sw / 2;
+    ctx.font = `700 ${fs}px ${F_MONO}`; const w1 = ctx.measureText(s[0] + ' ').width; const w2 = ctx.measureText(s[1]).width;
+    text(s[0] + ' ', x - (w1 + w2) / 2, a.y + stripH / 2, fs, '#5c6670', 'left', 700, F_MONO);
+    text(s[1], x - (w1 + w2) / 2 + w1, a.y + stripH / 2, fs, s[2], 'left', 700, F_MONO);
+  });
+}
+
+function drawADI(x, y, w, h) {
+  const cx = x + w / 2, cy = y + h / 2, ppd = h / 55, big = (w + h) * 2;
+  ctx.save(); rrect(x, y, w, h, 16); ctx.clip();
+  ctx.translate(cx, cy); ctx.rotate(-D.roll * DEG); ctx.translate(0, D.pitch * ppd);
+  const sky = ctx.createLinearGradient(0, -h, 0, 0); sky.addColorStop(0, '#0b3f8c'); sky.addColorStop(1, '#2f8be6');
+  ctx.fillStyle = sky; ctx.fillRect(-big, -big, big * 2, big);
+  const gr = ctx.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#8a5523'); gr.addColorStop(1, '#4a2a0e');
+  ctx.fillStyle = gr; ctx.fillRect(-big, 0, big * 2, big);
+  line(-big, 0, big, 0, '#fff', 2);
+  for (let p = -90; p <= 90; p += 2.5) {
+    if (p === 0 || Math.abs(p - D.pitch) > 24) continue;
+    const yy = -p * ppd, len = p % 10 === 0 ? w * 0.24 : p % 5 === 0 ? w * 0.12 : w * 0.05;
+    line(-len / 2, yy, len / 2, yy, '#fff', p % 10 === 0 ? 2 : 1.4);
+    if (p % 10 === 0) { const fs = clamp(w * 0.04, 11, 16); text(String(Math.abs(p)), -len / 2 - 6, yy, fs, '#fff', 'right', 700, F_MONO); text(String(Math.abs(p)), len / 2 + 6, yy, fs, '#fff', 'left', 700, F_MONO); }
+  }
+  ctx.restore();
+  // escala de alabeo
+  const rr = Math.min(w * 0.44, h * 0.42);
+  ctx.save(); ctx.translate(cx, cy);
+  ctx.beginPath(); ctx.arc(0, 0, rr, (-90 - 60) * DEG, (-90 + 60) * DEG); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  [-60, -45, -30, -20, -10, 10, 20, 30, 45, 60].forEach(d => {
+    const ang = (d - 90) * DEG, l = (Math.abs(d) === 30 || Math.abs(d) === 60) ? 13 : 7;
+    line(Math.cos(ang) * rr, Math.sin(ang) * rr, Math.cos(ang) * (rr + l), Math.sin(ang) * (rr + l), '#fff', 2);
+  });
+  ctx.beginPath(); ctx.moveTo(0, -rr - 1); ctx.lineTo(-8, -rr - 13); ctx.lineTo(8, -rr - 13); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.rotate(-D.roll * DEG);
+  ctx.beginPath(); ctx.moveTo(0, -rr + 2); ctx.lineTo(-9, -rr + 15); ctx.lineTo(9, -rr + 15); ctx.closePath(); ctx.fillStyle = '#ffd60a'; ctx.fill();
+  const sl = clamp(D.gLat, -0.5, 0.5) * 40; ctx.fillRect(-10 + sl, -rr + 18, 20, 4);
+  ctx.restore();
+  // símbolo del avión
+  ctx.save(); ctx.translate(cx, cy); ctx.lineJoin = 'round';
+  const wing = w * 0.2, gap = w * 0.08;
+  const sym = (c, lw) => { ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.beginPath();
+    ctx.moveTo(-gap - wing, 0); ctx.lineTo(-gap, 0); ctx.lineTo(-gap, 10); ctx.moveTo(gap + wing, 0); ctx.lineTo(gap, 0); ctx.lineTo(gap, 10); ctx.stroke();
+    ctx.strokeRect(-4, -4, 8, 8); };
+  sym('#000', 8); sym('#ffd60a', 4);
+  ctx.restore();
+  // marco
+  rrect(x, y, w, h, 16); ctx.strokeStyle = '#2a3038'; ctx.lineWidth = 2; ctx.stroke();
+  if (!D.hasMotion && !S.demo) text('Sin datos de inclinación', cx, y + h - 18, 12, 'rgba(255,255,255,.7)', 'center', 600);
+}
+
+function drawTape(x, y, w, h, val, cfg, side) {
+  ctx.save(); rrect(x, y, w, h, 10); ctx.fillStyle = '#1b1f25'; ctx.fill(); ctx.clip();
+  const ppu = h / cfg.range, cy = y + h / 2, fs = clamp(w * 0.2, 11, 15);
+  if (val != null) {
+    const start = Math.floor((val - cfg.range / 2) / cfg.minor) * cfg.minor;
+    for (let v = start; v <= val + cfg.range / 2 + cfg.minor; v += cfg.minor) {
+      if (cfg.min != null && v < cfg.min) continue;
+      const ty = cy - (v - val) * ppu, maj = Math.abs(v / cfg.major - Math.round(v / cfg.major)) < 1e-6, len = maj ? 12 : 6;
+      if (side === 'L') { line(x + w - len, ty, x + w, ty, '#cfd6dd', 1.5); if (maj) text(String(Math.round(v)), x + w - 16, ty, fs, '#e8edf2', 'right', 600, F_MONO); }
+      else { line(x, ty, x + len, ty, '#cfd6dd', 1.5); if (maj) text(String(Math.round(v)), x + 16, ty, fs, '#e8edf2', 'left', 600, F_MONO); }
+    }
+  }
+  ctx.restore();
+  // caja del valor actual
+  const bh = 36, by = cy - bh / 2, bx = x + 3, bw = w - 6, ar = 8;
+  ctx.beginPath();
+  if (side === 'L') { ctx.moveTo(bx, by); ctx.lineTo(bx + bw - ar, by); ctx.lineTo(bx + bw - ar, cy - ar); ctx.lineTo(bx + bw, cy); ctx.lineTo(bx + bw - ar, cy + ar); ctx.lineTo(bx + bw - ar, by + bh); ctx.lineTo(bx, by + bh); }
+  else { ctx.moveTo(bx + bw, by); ctx.lineTo(bx + ar, by); ctx.lineTo(bx + ar, cy - ar); ctx.lineTo(bx, cy); ctx.lineTo(bx + ar, cy + ar); ctx.lineTo(bx + ar, by + bh); ctx.lineTo(bx + bw, by + bh); }
+  ctx.closePath(); ctx.fillStyle = '#000'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  const s = val == null ? '---' : cfg.fmt(val), bs = clamp((bw - ar) / Math.max(3, s.length) * 1.55, 12, 22);
+  text(s, side === 'L' ? bx + (bw - ar) / 2 : bx + ar + (bw - ar) / 2, cy + 1, bs, '#fff', 'center', 700, F_MONO);
+  text(cfg.label + ' ' + cfg.unit, x + w / 2, y - 9, 11, '#35d0ff', 'center', 700, F_MONO);
+}
+
+function drawHeadingTape(x, y, w, h) {
+  ctx.save(); rrect(x, y, w, h, 10); ctx.fillStyle = '#1b1f25'; ctx.fill(); ctx.clip();
+  const hd = heading(), cx = x + w / 2, ppd = w / 70;
+  if (hd != null) {
+    const s = Math.floor((hd - 40) / 5) * 5;
+    for (let d = s; d <= hd + 40; d += 5) {
+      const tx = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360, maj = dd % 10 === 0;
+      line(tx, y, tx, y + (maj ? 12 : 6), '#cfd6dd', 1.5);
+      if (maj) { const c = { 0: 'N', 90: 'E', 180: 'S', 270: 'O' }[dd];
+        text(c || String(dd / 10), tx, y + h * 0.62, c ? 15 : 12, c ? '#fff' : '#cfd6dd', 'center', c ? 800 : 600, F_MONO); }
+    }
+  }
+  ctx.restore();
+  ctx.beginPath(); ctx.moveTo(cx, y + 2); ctx.lineTo(cx - 7, y - 8); ctx.lineTo(cx + 7, y - 8); ctx.closePath(); ctx.fillStyle = '#ffd60a'; ctx.fill();
+  const bw = 58, bh = 24, bx = cx - bw / 2, by = y + h - bh - 4;
+  rrect(bx, by, bw, bh, 5); ctx.fillStyle = '#000'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  text(hd == null ? '---' : String(Math.round(hd) % 360).padStart(3, '0') + '°', cx, by + bh / 2 + 1, 15, '#fff', 'center', 700, F_MONO);
+}
+
+/* ---------- HUD ---------- */
+function drawHUD() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const a = area(), su = SPEED[spU()], v = D.speed * su.f, max = scaleMax();
+  const over = S.limit > 0 && D.speed > S.limit, col = over ? '#ff453a' : S.accent;
+  const land = a.w > a.h, cx = a.x + a.w / 2, cy = a.y + a.h * 0.5;
+  const size = land ? Math.min(a.h * 0.46, a.w * 0.28) : Math.min(a.w * 0.46, a.h * 0.3);
+  ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = size * 0.12;
+  text(fSpeed(D.speed), cx, cy, size, col, 'center', 700, F_DIG);
+  ctx.shadowBlur = size * 0.05;
+  text(su.l, cx, cy + size * 0.62, size * 0.15, col, 'center', 600);
+  const h = heading();
+  text(h == null ? '— — —' : cardinal(h) + '   ' + String(Math.round(h)).padStart(3, '0') + '°', cx, cy - size * 0.72, size * 0.17, col, 'center', 700, F_DIG);
+  // barra de segmentos
+  const n = 24, bw = Math.min(a.w * 0.8, size * 2.6), sx = cx - bw / 2, sy = cy + size * 0.86, segw = bw / n;
+  for (let i = 0; i < n; i++) {
+    const fr = (i + 1) / n, on = v / max >= fr - 1 / n / 2;
+    ctx.globalAlpha = on ? 1 : 0.15; ctx.fillStyle = (S.limit > 0 && fr * max > S.limit * su.f) ? '#ff453a' : col;
+    ctx.fillRect(sx + i * segw + 1.5, sy, segw - 3, size * 0.07);
+  }
+  ctx.globalAlpha = 1;
+  const fs = clamp(size * 0.14, 13, 34), by = a.y + a.h - fs * 0.6, fd = fDist(trip().dist);
+  text('ALT ' + fAlt(D.alt) + ' ' + ALT[alU()].l, a.x + 6, by, fs, col, 'left', 700, F_DIG);
+  text(fd.v + ' ' + fd.u, a.x + a.w - 6, by, fs, col, 'right', 700, F_DIG);
+  if (S.limit > 0) text('LÍMITE ' + Math.round(S.limit * su.f), a.x + 6, a.y + fs * 0.6, fs * 0.8, over ? '#ff453a' : col, 'left', 700, F_DIG);
+  ctx.restore();
+}
+
+/* ---------- Running / Bici ---------- */
+function drawActivity() {
+  ctx.fillStyle = '#07090b'; ctx.fillRect(0, 0, W, H);
+  const a = area(); a.h -= 70; // espacio para botones
+  const tr = trip(), pu = paceUnit(), su = SPEED[spU()], fd = fDist(tr.dist), h = heading();
+  const st = { id: 'sport', card: 'rgba(255,255,255,0.045)', cardLine: 'rgba(255,255,255,0.07)', lab: '#7b8591', val: '#fff', unit: '#8b96a1' };
+  const land = a.w > a.h * 1.2;
+  const hero = land ? { x: a.x, y: a.y, w: a.w * 0.44, h: a.h } : { x: a.x, y: a.y, w: a.w, h: Math.min(a.h * 0.34, 230) };
+  rrect(hero.x, hero.y, hero.w, hero.h, 18); ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fill();
+  const pace = D.speed > 0.5 ? pu.m / D.speed : Infinity;
+  text('RITMO ACTUAL', hero.x + hero.w / 2, hero.y + 24, 12, '#7b8591', 'center', 700);
+  const hs = Math.min(hero.h * 0.42, hero.w * 0.26);
+  valueUnit(fPace(pace), pu.l, hero.x + hero.w / 2, hero.y + hero.h * 0.66, hs, tr.running ? S.accent : '#7b8591', '#8b96a1', 'center');
+  text(tr.running ? (fSpeed(D.speed) + ' ' + su.l) : 'EN PAUSA', hero.x + hero.w / 2, hero.y + hero.h - 18, 14, '#9aa5b1', 'center', 600);
+  const gr = land ? { x: a.x + a.w * 0.44 + 10, y: a.y, w: a.w * 0.56 - 10, h: a.h } : { x: a.x, y: hero.y + hero.h + 10, w: a.w, h: a.h - hero.h - 10 };
+  infoGrid(gr, [
+    { l: 'Distancia', v: fd.v, u: fd.u },
+    { l: 'Tiempo', v: fTime(tr.time), u: '' },
+    { l: 'Ritmo medio', v: fPace(tr.dist > 20 ? tr.moving / (tr.dist / pu.m) : Infinity), u: pu.l },
+    { l: 'Vel. máxima', v: fSpeed(tr.max), u: su.l },
+    { l: 'Desnivel +', v: String(Math.round(tr.gain * ALT[alU()].f)), u: ALT[alU()].l },
+    { l: 'Altitud', v: fAlt(D.alt), u: ALT[alU()].l },
+  ], 2, st);
+}
+
+/* ---------- sensores ---------- */
+function hav(la1, lo1, la2, lo2) {
+  const R = 6371000, dLa = (la2 - la1) * DEG, dLo = (lo2 - lo1) * DEG;
+  const s = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * DEG) * Math.cos(la2 * DEG) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+let prevFix = null;
+function onPos(p) {
+  if (S.demo) return;
+  const c = p.coords, t = p.timestamp || Date.now();
+  let v = (c.speed != null && c.speed >= 0 && !isNaN(c.speed)) ? c.speed : null;
+  if (prevFix) {
+    const dt = (t - prevFix.t) / 1000;
+    if (dt > 0) {
+      const d = hav(prevFix.lat, prevFix.lon, c.latitude, c.longitude);
+      if (v == null && dt < 10) v = c.accuracy < 40 ? d / dt : 0;
+      if (TR.running && c.accuracy < 35 && (v || 0) > 0.6 && d < 150 * dt) TR.dist += d;
+      if (c.altitude != null && prevFix.alt != null) D.vs = D.vs * 0.7 + ((c.altitude - prevFix.alt) / dt) * 0.3;
+    }
+  }
+  D.raw = v || 0;
+  if (c.heading != null && !isNaN(c.heading) && D.raw > 1.5) D.gpsHdg = c.heading; else if (D.raw < 1) D.gpsHdg = null;
+  if (c.altitude != null) {
+    D.alt = c.altitude;
+    if (TR.running && (c.altitudeAccuracy == null || c.altitudeAccuracy < 30)) {
+      if (TR.base == null) TR.base = c.altitude;
+      else if (c.altitude > TR.base + 4) { TR.gain += c.altitude - TR.base; TR.base = c.altitude; }
+      else if (c.altitude < TR.base - 4) TR.base = c.altitude;
+    }
+  }
+  if (TR.running && c.accuracy < 50) TR.max = Math.max(TR.max, D.raw);
+  D.acc = c.accuracy; D.gpsOk = true; D.gpsErr = null; D.lastFix = performance.now();
+  prevFix = { t, lat: c.latitude, lon: c.longitude, alt: c.altitude };
+}
+function onPosErr(e) {
+  D.gpsErr = e.code === 1 ? 'denied' : 'err';
+  if (e.code === 1 && !S.demo) toast('Sin permiso de ubicación. Actívalo en Ajustes › Privacidad › Localización.', 6000);
+}
+const screenAngle = () => (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0);
+function angLerp(a, b, k) { if (a == null) return b; let d = ((b - a + 540) % 360) - 180; return (a + d * k + 360) % 360; }
+function onOrient(e) {
+  if (S.demo) return;
+  let h = null;
+  if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) h = e.webkitCompassHeading;
+  else if (e.absolute && e.alpha != null) h = 360 - e.alpha;
+  if (h != null) D.compass = angLerp(D.compass, (h + screenAngle() + 360) % 360, 0.2);
+}
+const grav = { x: 0, y: 0, z: 0, init: false };
+function onMotion(e) {
+  if (S.demo) return;
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+  if (!grav.init) { grav.x = g.x; grav.y = g.y; grav.z = g.z; grav.init = true; }
+  const k = 0.08; grav.x += (g.x - grav.x) * k; grav.y += (g.y - grav.y) * k; grav.z += (g.z - grav.z) * k;
+  const an = screenAngle() * DEG, co = Math.cos(an), si = Math.sin(an);
+  let sx = grav.x * co - grav.y * si, sy = grav.x * si + grav.y * co, sz = grav.z;
+  if (!S.gsign) { if (Math.abs(sy) > 3) { S.gsign = sy > 0 ? 1 : -1; saveS(); } }
+  const sg = S.gsign || 1; sx *= sg; sy *= sg; sz *= sg;
+  D.rawRoll = Math.atan2(-sx, sy) / DEG; D.rawPitch = Math.atan2(-sz, Math.hypot(sx, sy)) / DEG;
+  D.roll = D.rawRoll - S.rollOff; D.pitch = D.rawPitch - S.pitchOff; D.hasMotion = true;
+  const l = e.acceleration;
+  if (l && l.x != null) {
+    const lx = (l.x * co - l.y * si) * sg, lz = l.z * sg;
+    D.gLat += (lx / 9.81 - D.gLat) * 0.12; D.gLon += (-lz / 9.81 - D.gLon) * 0.12;
+  }
+}
+
+/* ---------- bloqueo de pantalla y sonido ---------- */
+let wl = null;
+async function wake() { if (!S.wake || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  try { wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
+function release() { try { wl && wl.release(); } catch (e) {} wl = null; }
+let AC = null;
+function unlockAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
+  const o = AC.createOscillator(), g = AC.createGain(); g.gain.value = 0; o.connect(g).connect(AC.destination); o.start(); o.stop(AC.currentTime + 0.02); } catch (e) {} }
+function beep() { if (!AC || !S.sound) return; const t = AC.currentTime;
+  [0, 0.2].forEach(d => { const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = 1046;
+    g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.5, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.15);
+    o.connect(g).connect(AC.destination); o.start(t + d); o.stop(t + d + 0.17); }); }
+
+/* ---------- bucle principal ---------- */
+let last = performance.now(), lastSave = 0, lastBeep = 0, started = false;
+const SMOOTH = { low: 0.25, med: 0.1, high: 0.04 };
+function update(dt, now) {
+  const tr = trip();
+  if (S.demo) {
+    const t = now / 1000;
+    D.raw = Math.max(0, (70 + 55 * Math.sin(t / 7) + 12 * Math.sin(t / 1.9)) / 3.6);
+    D.gpsHdg = (t * 6) % 360; D.compass = D.gpsHdg; D.alt = 620 + 180 * Math.sin(t / 25); D.vs = 180 / 25 * Math.cos(t / 25);
+    D.roll = 22 * Math.sin(t / 4); D.pitch = 7 * Math.sin(t / 5.3); D.gLat = 0.45 * Math.sin(t / 4); D.gLon = 0.25 * Math.cos(t / 7);
+    D.acc = 4; D.gpsOk = true; D.lastFix = now; D.hasMotion = true;
+    if (tr.running) { tr.dist += D.raw * dt; tr.max = Math.max(tr.max, D.raw); }
+  }
+  D.speed += (D.raw - D.speed) * clamp(SMOOTH[S.smoothing] * dt * 60, 0, 1);
+  if (D.speed < 0.05 && D.raw === 0) D.speed = 0;
+  if (!S.demo && now - D.lastFix > 6000) { D.gpsOk = false; if (now - D.lastFix > 12000) { D.raw = 0; } }
+  if (tr.running && started) { tr.time += dt; if (D.raw > 0.8) tr.moving += dt; }
+  if (S.limit > 0 && D.speed > S.limit && now - lastBeep > 2500) { beep(); lastBeep = now; }
+  if (now - lastSave > 5000) { store.set('cabina.trip', TR); lastSave = now; }
+}
+function frame(now) {
+  const dt = Math.min(0.25, (now - last) / 1000); last = now;
+  update(dt, now);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.save();
+  if (S.theme === 'hud' && S.mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+  theme().draw();
+  ctx.restore();
+  if (S.limit > 0 && D.speed > S.limit && Math.floor(now / 400) % 2 === 0) { ctx.strokeStyle = 'rgba(255,59,48,0.85)'; ctx.lineWidth = 10; ctx.strokeRect(0, 0, W, H); }
+  requestAnimationFrame(frame);
+}
+function updateBar() {
+  const i = $('#gps i'), s = $('#gps span');
+  if (S.demo) { i.style.background = '#35d0ff'; s.textContent = 'DEMO'; return; }
+  if (D.gpsErr === 'denied') { i.style.background = '#ff453a'; s.textContent = 'Sin permiso'; return; }
+  if (!D.gpsOk) { i.style.background = '#ff9f0a'; s.textContent = 'Buscando GPS…'; return; }
+  i.style.background = D.acc < 15 ? '#30d158' : D.acc < 40 ? '#ffd60a' : '#ff9f0a';
+  s.textContent = '±' + Math.round(D.acc) + ' m';
+}
+setInterval(updateBar, 700);
+
+/* ---------- interfaz ---------- */
+function toast(msg, ms = 2500) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); }
+function setTheme(id) { S.theme = id; saveS(); syncUI(); }
+function shiftTheme(d) { const i = THEMES.findIndex(t => t.id === S.theme); setTheme(THEMES[(i + d + THEMES.length) % THEMES.length].id); }
+function syncUI() {
+  document.documentElement.style.setProperty('--acc', S.accent);
+  $('#tname').textContent = theme().name;
+  $('#dots').innerHTML = THEMES.map(t => `<div class="dot${t.id === S.theme ? ' on' : ''}"></div>`).join('');
+  $('#actCtl').style.display = S.theme === 'actividad' ? 'flex' : 'none';
+  $('#btnPause').textContent = trip().running ? 'Pausar' : 'Reanudar';
+  $('#themeChips').innerHTML = THEMES.map(t => `<button class="chip${t.id === S.theme ? ' on' : ''}" data-t="${t.id}">${t.name}</button>`).join('');
+  $('#swatches').innerHTML = ACCENTS.map(c => `<button style="background:${c}" class="${c === S.accent ? 'on' : ''}" data-c="${c}" aria-label="Color"></button>`).join('');
+  ['speedUnit', 'altUnit', 'maxScale', 'smoothing'].forEach(k => $('#' + k).value = String(S[k]));
+  ['sound', 'mirror', 'wake', 'demo'].forEach(k => $('#' + k).checked = !!S[k]);
+  $('#limit').value = S.limit > 0 ? Math.round(S.limit * SPEED[spU()].f) : '';
+  $('#limHint').textContent = 'En ' + SPEED[spU()].l + ' · vacío = desactivada';
+}
+$('#prev').onclick = () => shiftTheme(-1);
+$('#next').onclick = () => shiftTheme(1);
+$('#gear').onclick = () => { syncUI(); $('#sheet').classList.add('open'); };
+$('#close').onclick = () => $('#sheet').classList.remove('open');
+$('#sheet').addEventListener('click', e => { if (e.target.id === 'sheet') $('#sheet').classList.remove('open'); });
+$('#themeChips').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) setTheme(b.dataset.t); });
+$('#swatches').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { S.accent = b.dataset.c; saveS(); syncUI(); } });
+['speedUnit', 'altUnit', 'maxScale', 'smoothing'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.value; saveS(); syncUI(); }));
+['sound', 'mirror', 'demo'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.checked; if (k === 'demo') { TD = newTrip(); D.raw = 0; D.alt = null; D.gpsHdg = null; } saveS(); syncUI(); }));
+$('#wake').addEventListener('change', e => { S.wake = e.target.checked; saveS(); S.wake ? wake() : release(); });
+$('#limit').addEventListener('change', e => { const v = parseFloat(e.target.value); S.limit = v > 0 ? v / SPEED[spU()].f : 0; saveS(); });
+$('#calib').onclick = () => { if (!D.hasMotion) return toast('No hay datos de los sensores de movimiento.');
+  S.rollOff = D.rawRoll; S.pitchOff = D.rawPitch; saveS(); toast('Horizonte calibrado ✓'); };
+$('#resetTrip').onclick = () => resetTrip();
+function resetTrip() { Object.assign(trip(), newTrip()); prevFix = null; store.set('cabina.trip', TR); syncUI(); toast('Viaje reiniciado'); }
+$('#btnPause').onclick = () => { const tr = trip(); tr.running = !tr.running; syncUI(); };
+$('#btnReset').onclick = function () {
+  if (this.dataset.arm) { delete this.dataset.arm; this.textContent = 'Reiniciar'; resetTrip(); return; }
+  this.dataset.arm = 1; this.textContent = '¿Seguro?'; setTimeout(() => { delete this.dataset.arm; this.textContent = 'Reiniciar'; }, 3000);
+};
+// deslizar para cambiar de cabina
+let tx0 = null, ty0 = null;
+cv.addEventListener('touchstart', e => { tx0 = e.touches[0].clientX; ty0 = e.touches[0].clientY; }, { passive: true });
+cv.addEventListener('touchend', e => { if (tx0 == null) return; const dx = e.changedTouches[0].clientX - tx0, dy = e.changedTouches[0].clientY - ty0;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftTheme(dx < 0 ? 1 : -1); tx0 = null; }, { passive: true });
+addEventListener('keydown', e => { if (e.key === 'ArrowRight') shiftTheme(1); if (e.key === 'ArrowLeft') shiftTheme(-1); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); else store.set('cabina.trip', TR); });
+
+async function start(demo) {
+  unlockAudio();
+  if (demo) { S.demo = true; TD = newTrip(); saveS(); }
+  const reqs = [];
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') reqs.push(DeviceOrientationEvent.requestPermission().catch(() => 'denied'));
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') reqs.push(DeviceMotionEvent.requestPermission().catch(() => 'denied'));
+  $('#start').style.display = 'none';
+  started = true;
+  syncUI();
+  const res = await Promise.all(reqs);
+  addEventListener('deviceorientation', onOrient);
+  addEventListener('devicemotion', onMotion);
+  if (res.includes('denied') && !demo) toast('Sin acceso a sensores de movimiento: no habrá brújula ni horizonte.', 5000);
+  if ('geolocation' in navigator) navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  else toast('Este navegador no tiene GPS disponible.');
+  wake();
+}
+$('#go').onclick = () => { if (S.demo) { S.demo = false; saveS(); } start(false); };
+$('#godemo').onclick = () => start(true);
+
+resize(); syncUI(); requestAnimationFrame(frame);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
