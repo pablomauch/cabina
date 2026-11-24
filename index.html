@@ -260,7 +260,7 @@ function drawGauge(cx, cy, r, st) {
     const fg = ctx.createRadialGradient(cx, cy - r * 0.4, r * 0.1, cx, cy, r * 1.05);
     fg.addColorStop(0, '#1a1d22'); fg.addColorStop(1, '#050607');
     ctx.beginPath(); ctx.arc(cx, cy, r * 1.04, 0, Math.PI * 2); ctx.fillStyle = fg; ctx.fill();
-    ctx.lineWidth = r * 0.04; ctx.strokeStyle = '#3b4048'; ctx.stroke();
+    if (!st.noRing) { ctx.lineWidth = r * 0.04; ctx.strokeStyle = '#3b4048'; ctx.stroke(); }
   }
   ctx.lineCap = 'butt';
   if (st.id === 'sport') { ctx.beginPath(); ctx.arc(cx, cy, r * 0.93, a0, a1); ctx.strokeStyle = st.track; ctx.lineWidth = r * 0.075; ctx.stroke(); }
@@ -603,11 +603,11 @@ function drawScenery(kind, hy, ppdA) {
   if (kind === 'auto') {
     quad(-4, 4, 1.2, 3000, '#4a4d52');
     quad(-3.8, -3.65, 1.2, 3000, '#e8e8e8'); quad(3.65, 3.8, 1.2, 3000, '#e8e8e8');
-    for (let n = 0; n < 40; n++) { const z = 12 * n - (sceneZ % 12) + 1.2; if (z > 400) break; quad(-0.08, 0.08, Math.max(z, 1.2), z + 4, '#f2f2f2'); }
+    for (let n = 0; n < 40; n++) { const z = 12 * n - (sceneZ % 12) + 1.2; if (z > 400) break; if (z + 4 > 1.25) quad(-0.08, 0.08, Math.max(z, 1.2), z + 4, '#f2f2f2'); }
     for (let n = 0; n < 30; n++) { const z = 40 * n - (sceneZ % 40) + 3; if (z > 800) break; pole(-6, 1, z, '#eee', 0.12); pole(6, 1, z, '#eee', 0.12); }
   } else {
     quad(-2.6, 2.6, 1.2, 3000, '#857b70');
-    for (let n = 0; n < 80; n++) { const z = 2.4 * n - (sceneZ % 2.4) + 1.2; if (z > 140) break; quad(-1.3, 1.3, Math.max(z, 1.2), z + 0.3, '#4b3b2d'); }
+    for (let n = 0; n < 80; n++) { const z = 2.4 * n - (sceneZ % 2.4) + 1.2; if (z > 140) break; if (z + 0.3 > 1.25) quad(-1.3, 1.3, Math.max(z, 1.2), z + 0.3, '#4b3b2d'); }
     quad(-0.79, -0.72, 1.2, 3000, '#d9dce1'); quad(0.72, 0.79, 1.2, 3000, '#d9dce1');
     const w0 = P(0, 5.6, 1.5), w1 = P(0, 5.6, 4000); line(w0[0], w0[1], w1[0], w1[1], '#2b2b2b', 1.5);
     for (let n = 0; n < 40; n++) { const z = 60 * n - (sceneZ % 60) + 3; if (z > 1500) break;
@@ -617,8 +617,8 @@ function drawScenery(kind, hy, ppdA) {
 function windowView(kind, hy, ppd) { if (!camLive()) drawScenery(kind, hy, ppd); }
 
 /* ---------- piezas de los paneles ---------- */
-function screenBox(x, y, w, h, rows, col) {
-  rrect(x, y, w, h, Math.min(10, h * 0.08)); ctx.fillStyle = '#030405'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#30353c'; ctx.stroke();
+function screenBox(x, y, w, h, rows, col, noFrame) {
+  if (!noFrame) { rrect(x, y, w, h, Math.min(10, h * 0.08)); ctx.fillStyle = '#030405'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#30353c'; ctx.stroke(); }
   const n = rows.length, rh = (h - 10) / n, pad = Math.max(7, w * 0.06), stack = w < 140;
   rows.forEach((r, i) => {
     const ry = y + 5 + rh * i + rh / 2;
@@ -709,6 +709,7 @@ function deskFill(pTop, c1, c2, c3) {
 
 /* ---------- Cabina Tren ---------- */
 function drawTrenCab() {
+  if (photoCab('tren')) return;
   const land = W > H, pTop = H * (land ? 0.6 : 0.64);
   windowView('tren', H * 0.42);
   ctx.fillStyle = '#17191c';
@@ -735,6 +736,7 @@ function drawTrenCab() {
 
 /* ---------- Cabina Auto ---------- */
 function drawAutoCab() {
+  if (photoCab('auto')) return;
   const land = W > H, pTop = H * (land ? 0.6 : 0.66);
   windowView('auto', H * 0.44);
   ctx.fillStyle = '#141518';
@@ -772,6 +774,7 @@ function drawAutoCab() {
 
 /* ---------- Cabina Avión ---------- */
 function drawAvionCab() {
+  if (photoCab('avion')) return;
   const land = W > H, pTop = H * (land ? 0.6 : 0.62), wy0 = H * 0.1;
   windowView('avion', wy0 + (pTop - wy0) * 0.52, (pTop - wy0) / 30);
   hudSymbology(W * 0.08, wy0, W * 0.84, pTop - wy0);
@@ -795,6 +798,114 @@ function drawAvionCab() {
   drawADI(x1, y, s, s);
   ctx.fillStyle = '#000'; ctx.fillRect(x2, y, s, s); compassDial(x2 + s / 2, y + s / 2 + s * 0.04, s * 0.4);
   screenBox(x3, y, s, s, [row('gs'), row('alt'), row('vs'), row('trk')], '#e8edf2');
+}
+
+/* ---------- cabinas renderizadas (imágenes) ---------- */
+const CAB_W = 2560, CAB_H = 1184;
+const SLOTS = {"tren":{"gauge":{"cx":1280.0,"cy":959.0,"r":171.7},"screenL":{"x":568.3,"y":795.6,"w":486.4,"h":278.2},"screenR":{"x":1505.3,"y":795.6,"w":486.4,"h":278.2},"leds":{"x":1280.0,"y":781.4,"s":13.0},"hy":509.1},"auto":{"mirror":{"x":1061.6,"y":195.5,"w":436.8,"h":94.4},"gaugeL":{"cx":1062.4,"cy":834.7,"r":132.6},"gaugeR":{"cx":1497.6,"cy":834.7,"r":132.6},"tft":{"x":1194.2,"y":734.1,"w":171.5,"h":201.3},"info":{"x":1907.2,"y":710.4,"w":268.8,"h":201.3},"hy":509.1},"avion":{"mcp_spd":{"x":829.4,"y":610.4,"w":133.1,"h":35.5},"mcp_hdg":{"x":1070.1,"y":610.4,"w":133.1,"h":35.5},"mcp_alt":{"x":1310.7,"y":610.4,"w":133.1,"h":35.5},"mcp_vs":{"x":1551.4,"y":610.4,"w":133.1,"h":35.5},"adi":{"x":588.6,"y":787.4,"w":367.0,"h":367.0},"nd":{"x":1096.5,"y":787.4,"w":367.0,"h":367.0},"data":{"x":1604.3,"y":787.4,"w":367.0,"h":367.0},"hud":[{"x":384.0,"y":142.1,"w":860.2,"h":444.0},{"x":1315.8,"y":142.1,"w":860.2,"h":444.0}],"hy":367.0}};
+function loadImg(src) { const i = new Image(); i.decoding = 'async'; i.src = src; return i; }
+const IMGS = { tren: {}, auto: {}, avion: {} };
+let imgsRequested = false;
+function requestImgs() {
+  if (imgsRequested) return; imgsRequested = true;
+  for (const k in IMGS) { IMGS[k].base = loadImg('img/' + k + '_base.webp'); IMGS[k].front = loadImg('img/' + k + '_front.webp'); }
+  IMGS.bgGround = loadImg('img/bg_ground.webp'); IMGS.bgSky = loadImg('img/bg_sky.webp');
+}
+const ready = i => i && i.complete && i.naturalWidth > 0;
+function cabXf() {
+  let s, ox, oy;
+  if (W >= H) { s = Math.max(W / CAB_W, H / CAB_H); ox = (W - CAB_W * s) / 2; oy = H - CAB_H * s; }
+  else { s = W / (0.64 * CAB_W); ox = W / 2 - CAB_W / 2 * s; oy = H - CAB_H * s; }
+  return { s, ox, oy, x: v => ox + v * s, y: v => oy + v * s, l: v => v * s };
+}
+function bgXf(X) { if (W >= H) return X; const s = Math.max(W / CAB_W, H / CAB_H); return { s, ox: (W - CAB_W * s) / 2, oy: (H - CAB_H * s) / 2, x: v => (W - CAB_W * s) / 2 + v * s, y: v => (H - CAB_H * s) / 2 + v * s, l: v => v * s }; }
+
+function photoScenery(kind, X) {
+  if (camLive()) return;
+  if (kind === 'avion') {
+    const sl = SLOTS.avion, B = bgXf(X), hy = W >= H ? X.y(sl.hy) : H * 0.35;
+    const ppd = (W >= H ? X.l(444) : H * 0.4) / 30;
+    drawScenery('avion', hy, ppd);
+    if (ready(IMGS.bgSky)) {
+      const k = ppd / 20, side = 2600 * k, wImg = Math.max(side, Math.hypot(W, H) * 1.8);
+      ctx.save(); ctx.translate(W / 2, hy); ctx.rotate(-D.roll * DEG); ctx.translate(0, D.pitch * ppd);
+      ctx.drawImage(IMGS.bgSky, -wImg / 2, -side / 2, wImg, side); ctx.restore();
+    }
+    return;
+  }
+  const B = bgXf(X), hy = B.y(509.1);
+  if (ready(IMGS.bgGround)) { ctx.fillStyle = '#9fb9cf'; ctx.fillRect(0, 0, W, H); ctx.drawImage(IMGS.bgGround, B.ox, B.oy, CAB_W * B.s, CAB_H * B.s); }
+  drawTrackObjects(kind, hy, !ready(IMGS.bgGround));
+}
+function drawTrackObjects(kind, hy, withBackdrop) {
+  if (withBackdrop) { drawScenery(kind, hy); return; }
+  const hc = kind === 'tren' ? 3 : 1.3, f = (H - hy) * 3 / hc;
+  const P = (X, Y, z) => [W / 2 + f * X / z, hy + f * (hc - Y) / z];
+  const fog = z => Math.exp(-z / 700);
+  const quad = (x1, x2, z1, z2, c, a = 1) => { const p = P(x1, 0, z1), q = P(x2, 0, z1), r = P(x2, 0, z2), s = P(x1, 0, z2);
+    ctx.globalAlpha = a; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.lineTo(r[0], r[1]); ctx.lineTo(s[0], s[1]); ctx.closePath(); ctx.fillStyle = c; ctx.fill(); ctx.globalAlpha = 1; };
+  const grad = (c1, c2) => { const g = ctx.createLinearGradient(0, hy, 0, H); g.addColorStop(0, c1); g.addColorStop(0.08, c2); g.addColorStop(1, c2); return g; };
+  if (kind === 'auto') {
+    quad(-4.2, 4.2, 1.2, 4000, grad('#a9b7c2', '#56585c'));
+    quad(-4.2, -3.9, 1.2, 4000, grad('#a9b7c2', '#7a7468'));
+    quad(-3.75, -3.62, 1.2, 4000, grad('#c3ccd3', '#e9e9e6')); quad(3.62, 3.75, 1.2, 4000, grad('#c3ccd3', '#e9e9e6'));
+    for (let n = 0; n < 40; n++) { const z = 12 * n - (sceneZ % 12) + 1.2; if (z > 500) break; if (z + 4 > 1.25) quad(-0.07, 0.07, Math.max(z, 1.2), z + 4, '#efefe9', fog(z)); }
+    for (let n = 0; n < 30; n++) { const z = 50 * n - (sceneZ % 50) + 3; if (z > 900) break;
+      for (const sx of [-6.5, 6.5]) { const a = P(sx, 0, z), b = P(sx, 1.1, z); ctx.globalAlpha = fog(z); line(a[0], a[1], b[0], b[1], '#f4f4f0', Math.max(1, f * 0.12 / z)); ctx.globalAlpha = 1; } }
+  } else {
+    quad(-2.8, 2.8, 1.2, 4000, grad('#aab5bd', '#7f776d'));
+    for (let n = 0; n < 70; n++) { const z = 0.65 * 3 * n - (sceneZ % 1.95) + 1.2; if (z > 120) break; if (z + 0.28 > 1.25) quad(-1.3, 1.3, Math.max(z, 1.2), z + 0.28, '#8d8a84', fog(z) * 0.9); }
+    for (const rx of [-0.75, 0.75]) quad(rx - 0.04, rx + 0.04, 1.2, 4000, grad('#c7d0d6', '#b9bcbf'));
+    const w0 = P(0, 5.6, 1.6), w1 = P(0, 5.6, 6000); ctx.globalAlpha = 0.8; line(w0[0], w0[1], w1[0], w1[1], '#2a2a2a', 1.2); ctx.globalAlpha = 1;
+    for (let n = 0; n < 40; n++) { const z = 60 * n - (sceneZ % 60) + 3; if (z > 1800) break; ctx.globalAlpha = fog(z);
+      const a = P(3.8, 0, z), b = P(3.8, 7.2, z), c = P(-0.3, 6.6, z); line(a[0], a[1], b[0], b[1], '#6c7176', Math.max(1, f * 0.22 / z));
+      line(b[0], (b[1] + c[1]) / 2 + 2, c[0], c[1], '#6c7176', Math.max(1, f * 0.08 / z)); ctx.globalAlpha = 1; }
+  }
+}
+function slotRect(X, r) { return [X.x(r.x), X.y(r.y), X.l(r.w), X.l(r.h)]; }
+function portraitHint() {
+  if (W >= H) return;
+  const y = SA.t + 66; ctx.font = '600 13px ' + F_SYS; const t = 'Gira el teléfono para la cabina completa ↻'; const w = ctx.measureText(t).width + 28;
+  rrect(W / 2 - w / 2, y - 15, w, 30, 15); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill(); text(t, W / 2, y + 1, 13, '#fff', 'center', 600);
+}
+const STYLE_PANEL_IMG = Object.assign({}, STYLE_PANEL, { noRing: true });
+function photoCab(id) {
+  requestImgs();
+  const I = IMGS[id]; if (!ready(I.base)) return false;
+  const X = cabXf(), sl = SLOTS[id];
+  photoScenery(id === 'avion' ? 'avion' : id, X);
+  if (id === 'avion') {
+    ctx.save(); ctx.beginPath(); sl.hud.forEach(h => ctx.rect(X.x(h.x), X.y(h.y), X.l(h.w), X.l(h.h))); ctx.clip();
+    const h0 = sl.hud[0], h1 = sl.hud[1]; hudSymbology(X.x(h0.x), X.y(h0.y), X.x(h1.x + h1.w) - X.x(h0.x), X.l(h0.h)); ctx.restore();
+  }
+  ctx.drawImage(I.base, X.ox, X.oy, CAB_W * X.s, CAB_H * X.s);
+  if (id === 'tren') {
+    const g = sl.gauge; drawGauge(X.x(g.cx), X.y(g.cy), X.l(g.r), STYLE_PANEL_IMG);
+    screenBox(...slotRect(X, sl.screenL), [row('dist'), row('time'), row('max')], '#7fd4ff', true);
+    screenBox(...slotRect(X, sl.screenR), [row('hdg'), row('alt'), row('clock')], '#7fd4ff', true);
+    const L = sl.leds;
+    [['#30d158', D.gpsOk || S.demo], ['#ffd60a', S.limit > 0], ['#ff453a', S.limit > 0 && D.speed > S.limit]].forEach((l, i) => {
+      ctx.beginPath(); ctx.arc(X.x(L.x + (i - 1) * L.s * 3), X.y(L.y), X.l(L.s), 0, Math.PI * 2); ctx.fillStyle = l[1] ? l[0] : '#22252a'; ctx.fill(); });
+  } else if (id === 'auto') {
+    const a = sl.gaugeL, b = sl.gaugeR;
+    drawGauge(X.x(a.cx), X.y(a.cy), X.l(a.r), STYLE_PANEL_IMG);
+    compassDial(X.x(b.cx), X.y(b.cy), X.l(b.r) * 0.99);
+    screenBox(...slotRect(X, sl.tft), [row('dist'), row('alt'), row('time')], '#ffb347', true);
+    screenBox(...slotRect(X, sl.info), [row('hdg'), row('avg'), row('clock')], '#e8edf2', true);
+    const m = sl.mirror; text(row('clock')[1], X.x(m.x + m.w - 30), X.y(m.y + m.h / 2), X.l(m.h * 0.36), 'rgba(140,220,255,0.75)', 'right', 600, F_DIG);
+  } else {
+    const ad = sl.adi, nd = sl.nd;
+    drawADI(...slotRect(X, ad));
+    ctx.fillStyle = '#000'; ctx.fillRect(...slotRect(X, nd));
+    compassDial(X.x(nd.x + nd.w / 2), X.y(nd.y + nd.h / 2 + nd.h * 0.03), X.l(nd.w * 0.4));
+    screenBox(...slotRect(X, sl.data), [row('gs'), row('alt'), row('vs'), row('trk')], '#e8edf2', true);
+    const h = heading(), vs = fVS(D.vs);
+    const mcp = { spd: fSpeed(D.speed), hdg: h == null ? '---' : String(Math.round(h) % 360).padStart(3, '0'), alt: fAlt(D.alt), vs: vs.v };
+    for (const k in mcp) { const r = sl['mcp_' + k]; text(mcp[k], X.x(r.x + r.w / 2), X.y(r.y + r.h / 2) + 1, X.l(r.h * 0.72), '#ffb020', 'center', 700, F_MONO); }
+  }
+  if (ready(I.front)) ctx.drawImage(I.front, X.ox, X.oy, CAB_W * X.s, CAB_H * X.s);
+  portraitHint();
+  return true;
 }
 
 /* ---------- sensores ---------- */
