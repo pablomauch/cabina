@@ -15,6 +15,9 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;touch-action:none}
 canvas{position:fixed;inset:0;display:block}
+#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;display:none;background:#000}
+#bar,#dots{transition:opacity .4s}
+body.idle #bar,body.idle #dots{opacity:0;pointer-events:none}
 #sa{position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 button{font:inherit;color:inherit;cursor:pointer}
 #bar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -75,6 +78,7 @@ input[type=number]{width:90px;text-align:right}
 </style>
 </head>
 <body>
+<video id="cam" playsinline muted autoplay></video>
 <canvas id="c"></canvas>
 <div id="sa"></div>
 
@@ -104,10 +108,13 @@ input[type=number]{width:90px;text-align:right}
   <div class="sec">Cabina</div>
   <div class="chips" id="themeChips"></div>
 
+  <div class="sec">Escala máxima del velocímetro</div>
+  <div class="chips" id="scaleChips"></div>
+  <div class="foot" style="margin-top:2px">Automática: se agranda sola si la velocidad supera la escala.</div>
+
   <div class="sec">Unidades</div>
   <div class="row"><span>Velocidad</span><select id="speedUnit"><option value="auto">Según cabina</option><option value="kmh">km/h</option><option value="mph">mph</option><option value="kn">Nudos (kt)</option><option value="ms">m/s</option></select></div>
   <div class="row"><span>Altitud</span><select id="altUnit"><option value="auto">Según cabina</option><option value="m">Metros</option><option value="ft">Pies</option></select></div>
-  <div class="row"><span>Escala del velocímetro</span><select id="maxScale"><option value="auto">Automática</option><option>60</option><option>100</option><option>140</option><option>180</option><option>220</option><option>260</option><option>300</option><option>400</option></select></div>
 
   <div class="sec">Alerta de velocidad</div>
   <div class="row"><span>Límite<span class="hint" id="limHint">0 = desactivada</span></span><input type="number" id="limit" inputmode="numeric" min="0" step="1"></div>
@@ -119,6 +126,7 @@ input[type=number]{width:90px;text-align:right}
   <div class="row"><span>Suavizado de aguja</span><select id="smoothing"><option value="low">Bajo (rápido)</option><option value="med">Medio</option><option value="high">Alto (estable)</option></select></div>
 
   <div class="sec">Sistema</div>
+  <div class="row"><span>Cámara en las cabinas<span class="hint">Si la apagas, se muestra un paisaje simulado</span></span><label class="tg"><input type="checkbox" id="camera"><span></span></label></div>
   <div class="row"><span>Pantalla siempre encendida</span><label class="tg"><input type="checkbox" id="wake"><span></span></label></div>
   <div class="row"><span>Modo demo<span class="hint">Simula un viaje para probar las cabinas</span></span><label class="tg"><input type="checkbox" id="demo"><span></span></label></div>
 
@@ -144,26 +152,34 @@ const store = {
 
 /* ---------- ajustes ---------- */
 const DEFAULTS = { theme: 'deportivo', speedUnit: 'auto', altUnit: 'auto', maxScale: 'auto', limit: 0, sound: true,
-  accent: '#38f28a', mirror: false, smoothing: 'med', wake: true, demo: false, rollOff: 0, pitchOff: 0, gsign: 0 };
+  accent: '#38f28a', camera: true, mirror: false, smoothing: 'med', wake: true, demo: false, rollOff: 0, pitchOff: 0, gsign: 0 };
 const S = Object.assign({}, DEFAULTS, store.get('cabina.settings', {}));
 const saveS = () => store.set('cabina.settings', S);
 
 const SPEED = { kmh: { f: 3.6, l: 'km/h' }, mph: { f: 2.2369363, l: 'mph' }, kn: { f: 1.9438445, l: 'kt' }, ms: { f: 1, l: 'm/s' } };
 const ALT = { m: { f: 1, l: 'm' }, ft: { f: 3.28084, l: 'ft' } };
-const AUTO_MAX = { kmh: 220, mph: 140, kn: 160, ms: 60 };
+const SCALES = { kmh: [100, 140, 180, 220, 260, 300, 350, 400, 500], mph: [60, 80, 100, 120, 140, 160, 200, 250, 300],
+  kn: [60, 80, 100, 120, 160, 200, 250, 300, 400], ms: [20, 30, 40, 60, 80, 100, 120, 140] };
 const ACCENTS = ['#38f28a', '#35d0ff', '#ffb020', '#ff5a4f', '#c58cff', '#f2f2f2'];
 
 const THEMES = [
-  { id: 'deportivo', name: 'Deportivo', sp: 'kmh', al: 'm', draw: () => drawGaugeCockpit(STYLE_SPORT) },
-  { id: 'clasico', name: 'Clásico', sp: 'kmh', al: 'm', draw: () => drawGaugeCockpit(STYLE_CLASSIC) },
-  { id: 'avion', name: 'Avión', sp: 'kn', al: 'ft', draw: () => drawPFD() },
-  { id: 'hud', name: 'HUD', sp: 'kmh', al: 'm', draw: () => drawHUD() },
-  { id: 'actividad', name: 'Running / Bici', sp: 'kmh', al: 'm', draw: () => drawActivity() },
+  { id: 'deportivo', name: 'Deportivo', sp: 'kmh', al: 'm', base: 61, draw: () => drawGaugeCockpit(STYLE_SPORT) },
+  { id: 'clasico', name: 'Clásico', sp: 'kmh', al: 'm', base: 50, draw: () => drawGaugeCockpit(STYLE_CLASSIC) },
+  { id: 'tren', name: 'Cabina Tren', sp: 'kmh', al: 'm', base: 97, cam: true, draw: () => drawTrenCab() },
+  { id: 'autocam', name: 'Cabina Auto', sp: 'kmh', al: 'm', base: 61, cam: true, draw: () => drawAutoCab() },
+  { id: 'aviocam', name: 'Cabina Avión', sp: 'kn', al: 'ft', base: 82, cam: true, draw: () => drawAvionCab() },
+  { id: 'avion', name: 'Avión PFD', sp: 'kn', al: 'ft', base: 82, draw: () => drawPFD() },
+  { id: 'hud', name: 'HUD', sp: 'kmh', al: 'm', base: 61, draw: () => drawHUD() },
+  { id: 'actividad', name: 'Running / Bici', sp: 'kmh', al: 'm', base: 61, draw: () => drawActivity() },
 ];
 const theme = () => THEMES.find(t => t.id === S.theme) || THEMES[0];
 const spU = () => S.speedUnit !== 'auto' ? S.speedUnit : theme().sp;
 const alU = () => S.altUnit !== 'auto' ? S.altUnit : theme().al;
-const scaleMax = () => S.maxScale !== 'auto' ? +S.maxScale : AUTO_MAX[spU()];
+function scaleMax() {
+  if (S.maxScale !== 'auto') return +S.maxScale;
+  const u = spU(), f = SPEED[u].f, need = Math.max(theme().base * f, Math.max(trip().max, D.speed) * f * 1.04);
+  const list = SCALES[u]; return list.find(x => x >= need) || list[list.length - 1];
+}
 const distU = () => spU() === 'mph' ? { m: 1609.344, l: 'mi' } : spU() === 'kn' ? { m: 1852, l: 'nm' } : { m: 1000, l: 'km' };
 
 /* ---------- estado de sensores y viaje ---------- */
@@ -225,7 +241,8 @@ const STYLE_SPORT = { id: 'sport', bg1: '#0d141b', bg2: '#000', track: '#1a222b'
 const STYLE_CLASSIC = { id: 'classic', bg1: '#2a2018', bg2: '#0d0906', face: '#efe7d2', face2: '#d8cdb0', track: 'rgba(0,0,0,0)', tick: '#1b1712', minor: '#4a4236', label: '#1b1712',
   red: '#b3261e', needle: '#c62d1f', card: 'rgba(239,231,210,0.06)', cardLine: 'rgba(239,231,210,0.14)', lab: '#b8a98a', val: '#efe7d2', unit: '#b8a98a', font: F_CLASSIC };
 
-function niceStep(max) { for (const s of [5, 10, 20, 25, 40, 50, 100]) if (max / s <= 12) return s; return 100; }
+function niceStep(max) { for (const s of [5, 10, 20, 25, 50, 100]) if (max / s <= 11) return s; return 100; }
+const STYLE_PANEL = { id: 'panel', dark: true, track: 'rgba(0,0,0,0)', tick: '#f2f4f6', minor: '#7d8792', label: '#e8edf2', red: '#ff3b30', needle: '#ff8a1f', font: F_SYS };
 
 function drawGauge(cx, cy, r, st) {
   const su = SPEED[spU()], max = scaleMax(), v = D.speed * su.f, tr = trip();
@@ -239,12 +256,18 @@ function drawGauge(cx, cy, r, st) {
     fg.addColorStop(0, st.face); fg.addColorStop(1, st.face2);
     ctx.beginPath(); ctx.arc(cx, cy, r * 1.0, 0, Math.PI * 2); ctx.fillStyle = fg; ctx.fill();
   }
+  if (st.dark) {
+    const fg = ctx.createRadialGradient(cx, cy - r * 0.4, r * 0.1, cx, cy, r * 1.05);
+    fg.addColorStop(0, '#1a1d22'); fg.addColorStop(1, '#050607');
+    ctx.beginPath(); ctx.arc(cx, cy, r * 1.04, 0, Math.PI * 2); ctx.fillStyle = fg; ctx.fill();
+    ctx.lineWidth = r * 0.04; ctx.strokeStyle = '#3b4048'; ctx.stroke();
+  }
   ctx.lineCap = 'butt';
   if (st.id === 'sport') { ctx.beginPath(); ctx.arc(cx, cy, r * 0.93, a0, a1); ctx.strokeStyle = st.track; ctx.lineWidth = r * 0.075; ctx.stroke(); }
   // zona roja
   const red0 = S.limit > 0 ? S.limit * su.f : max * 0.85;
-  if (red0 < max) { ctx.beginPath(); ctx.arc(cx, cy, r * (st.face ? 0.9 : 0.93), A(red0), a1); ctx.strokeStyle = st.red;
-    ctx.globalAlpha = st.face ? 0.85 : 0.55; ctx.lineWidth = r * (st.face ? 0.05 : 0.075); ctx.stroke(); ctx.globalAlpha = 1; }
+  if (red0 < max) { ctx.beginPath(); ctx.arc(cx, cy, r * (st.face || st.dark ? 0.9 : 0.93), A(red0), a1); ctx.strokeStyle = st.red;
+    ctx.globalAlpha = st.face || st.dark ? 0.85 : 0.55; ctx.lineWidth = r * (st.face || st.dark ? 0.05 : 0.075); ctx.stroke(); ctx.globalAlpha = 1; }
   // arco de progreso (deportivo)
   if (st.id === 'sport' && v > 0.2) {
     const col = over ? '#ff453a' : S.accent;
@@ -255,7 +278,7 @@ function drawGauge(cx, cy, r, st) {
   const step = niceStep(max), mc = (step === 20 || step === 40) ? 4 : 5, ms = step / mc;
   for (let i = 0; i * ms <= max + 1e-6; i++) {
     const val = i * ms, a = A(val), major = i % mc === 0, ca = Math.cos(a), sa = Math.sin(a);
-    const r1 = st.face ? r * 0.94 : r * 0.84, r2 = major ? r1 - r * 0.1 : r1 - r * 0.045;
+    const r1 = st.face || st.dark ? r * 0.94 : r * 0.84, r2 = major ? r1 - r * 0.1 : r1 - r * 0.045;
     line(cx + ca * r1, cy + sa * r1, cx + ca * r2, cy + sa * r2, major ? st.tick : st.minor, major ? r * 0.018 : r * 0.008);
     if (major) text(String(val), cx + ca * (r2 - r * 0.11), cy + sa * (r2 - r * 0.11), r * 0.105, st.label, 'center', st.face ? 600 : 600, st.font);
   }
@@ -274,6 +297,12 @@ function drawGauge(cx, cy, r, st) {
     text(h == null ? '— — —' : cardinal(h) + '  ' + String(Math.round(h)).padStart(3, '0') + '°', cx, cy - r * 0.38, r * 0.085, '#8b96a1', 'center', 600);
     if (S.limit > 0) { const lx = cx, ly = cy + r * 0.66; ctx.beginPath(); ctx.arc(lx, ly, r * 0.1, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
       ctx.lineWidth = r * 0.025; ctx.strokeStyle = '#e0241b'; ctx.stroke(); text(String(Math.round(S.limit * su.f)), lx, ly + 1, r * 0.085, '#000', 'center', 800); }
+  } else if (st.id === 'panel') {
+    text(su.l, cx, cy - r * 0.32, r * 0.09, '#9aa5b1', 'center', 600);
+    const bw = r * 0.62, bh = r * 0.27, by = cy + r * 0.32;
+    rrect(cx - bw / 2, by, bw, bh, r * 0.05); ctx.fillStyle = '#000'; ctx.fill(); ctx.strokeStyle = '#2f343b'; ctx.lineWidth = 1; ctx.stroke();
+    text(fSpeed(D.speed), cx, by + bh / 2 + 1, bh * 0.78, over ? '#ff453a' : '#ffb347', 'center', 700, F_MONO);
+    needle(cx, cy, r, A(v), st.needle);
   } else {
     text(su.l, cx, cy - r * 0.3, r * 0.08, '#4a4236', 'center', 600, F_CLASSIC);
     // odómetro
@@ -282,16 +311,17 @@ function drawGauge(cx, cy, r, st) {
     for (let i = 0; i < 6; i++) { ctx.fillStyle = i === 5 ? '#efe7d2' : '#16120e'; ctx.fillRect(ox + i * bw, oy, bw - 1.5, bh);
       text(digits[i], ox + i * bw + bw / 2 - 0.75, oy + bh / 2 + 1, bh * 0.7, i === 5 ? '#16120e' : '#efe7d2', 'center', 600, F_MONO); }
     text(distU().l, cx, oy + bh + r * 0.08, r * 0.065, '#4a4236', 'center', 600, F_CLASSIC);
-    // aguja
-    const a = A(v);
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
-    ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = r * 0.03; ctx.shadowOffsetY = r * 0.015;
-    ctx.beginPath(); ctx.moveTo(-r * 0.18, -r * 0.022); ctx.lineTo(r * 0.86, -r * 0.006); ctx.lineTo(r * 0.86, r * 0.006); ctx.lineTo(-r * 0.18, r * 0.022); ctx.closePath();
-    ctx.fillStyle = st.needle; ctx.fill(); ctx.restore();
-    const hub = ctx.createRadialGradient(cx - r * 0.02, cy - r * 0.02, 1, cx, cy, r * 0.08);
-    hub.addColorStop(0, '#666'); hub.addColorStop(1, '#111');
-    ctx.beginPath(); ctx.arc(cx, cy, r * 0.075, 0, Math.PI * 2); ctx.fillStyle = hub; ctx.fill();
+    needle(cx, cy, r, A(v), st.needle);
   }
+}
+function needle(cx, cy, r, a, col) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = r * 0.03; ctx.shadowOffsetY = r * 0.015;
+  ctx.beginPath(); ctx.moveTo(-r * 0.18, -r * 0.022); ctx.lineTo(r * 0.86, -r * 0.006); ctx.lineTo(r * 0.86, r * 0.006); ctx.lineTo(-r * 0.18, r * 0.022); ctx.closePath();
+  ctx.fillStyle = col; ctx.fill(); ctx.restore();
+  const hub = ctx.createRadialGradient(cx - r * 0.02, cy - r * 0.02, 1, cx, cy, r * 0.08);
+  hub.addColorStop(0, '#666'); hub.addColorStop(1, '#111');
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.075, 0, Math.PI * 2); ctx.fillStyle = hub; ctx.fill();
 }
 
 function drawG(x, y, w, h, st) {
@@ -513,6 +543,260 @@ function drawActivity() {
   ], 2, st);
 }
 
+/* ---------- cámara ---------- */
+let camStream = null, camState = 'off'; // off | starting | on | denied | unavailable
+async function camOn() {
+  if (camStream || camState === 'starting') return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camState = 'unavailable'; return; }
+  camState = 'starting';
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    const v = $('#cam'); v.srcObject = camStream; v.style.display = 'block';
+    try { await v.play(); } catch (e) {}
+    camState = 'on';
+    if (!theme().cam || !S.camera) camOff();
+  } catch (e) {
+    camStream = null;
+    camState = (e && e.name === 'NotAllowedError') ? 'denied' : 'unavailable';
+    if (camState === 'denied' && !S.demo) toast('Sin permiso de cámara: se muestra un paisaje simulado. Puedes darlo en Ajustes › Safari › Cámara.', 6000);
+  }
+}
+function camOff() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  const v = $('#cam'); v.srcObject = null; v.style.display = 'none';
+  if (camState === 'on' || camState === 'starting') camState = 'off';
+}
+function syncCam() {
+  if (!started) return;
+  if (theme().cam && S.camera && camState !== 'denied' && camState !== 'unavailable') camOn(); else camOff();
+}
+const camLive = () => camState === 'on' && !!camStream;
+
+/* ---------- paisaje simulado (sin cámara) ---------- */
+let sceneZ = 0;
+function drawScenery(kind, hy, ppdA) {
+  if (kind === 'avion') {
+    const ppd = ppdA || H / 40, big = (W + H) * 2;
+    ctx.save(); ctx.translate(W / 2, hy); ctx.rotate(-D.roll * DEG); ctx.translate(0, D.pitch * ppd);
+    let g = ctx.createLinearGradient(0, -H, 0, 0); g.addColorStop(0, '#1f5fb8'); g.addColorStop(1, '#a8cdef');
+    ctx.fillStyle = g; ctx.fillRect(-big, -big, big * 2, big);
+    g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#7d9a6a'); g.addColorStop(1, '#2f4523');
+    ctx.fillStyle = g; ctx.fillRect(-big, 0, big * 2, big);
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+    for (let i = -30; i <= 30; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(i * W * 0.12, big); ctx.stroke(); }
+    const f = H * 0.6, alt = 400, sp = 400;
+    for (let n = 0; n < 40; n++) { const z = sp * n - (sceneZ % sp) + 200; const y = f * alt / z; if (y < 2) break; ctx.beginPath(); ctx.moveTo(-big, y); ctx.lineTo(big, y); ctx.stroke(); }
+    ctx.restore(); return;
+  }
+  let g = ctx.createLinearGradient(0, 0, 0, hy); g.addColorStop(0, '#3a74c2'); g.addColorStop(1, '#b9d6ee');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, hy);
+  ctx.fillStyle = '#7f98a8'; ctx.beginPath(); ctx.moveTo(0, hy);
+  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, hy - (14 + 10 * Math.sin(x / 70) + 7 * Math.sin(x / 23 + 1)) * H / 600);
+  ctx.lineTo(W, hy); ctx.closePath(); ctx.fill();
+  g = ctx.createLinearGradient(0, hy, 0, H); g.addColorStop(0, '#8aa25e'); g.addColorStop(1, '#3d5226');
+  ctx.fillStyle = g; ctx.fillRect(0, hy, W, H - hy);
+  const hc = kind === 'tren' ? 3 : 1.3, f = (H - hy) * 3 / hc;
+  const P = (X, Y, z) => [W / 2 + f * X / z, hy + f * (hc - Y) / z];
+  const quad = (x1, x2, z1, z2, c) => { const a = P(x1, 0, z1), b = P(x2, 0, z1), d = P(x2, 0, z2), e = P(x1, 0, z2);
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(d[0], d[1]); ctx.lineTo(e[0], e[1]); ctx.closePath(); ctx.fillStyle = c; ctx.fill(); };
+  const pole = (X, h, z, c, w) => { const a = P(X, 0, z), b = P(X, h, z); line(a[0], a[1], b[0], b[1], c, Math.max(1, f * w / z)); };
+  if (kind === 'auto') {
+    quad(-4, 4, 1.2, 3000, '#4a4d52');
+    quad(-3.8, -3.65, 1.2, 3000, '#e8e8e8'); quad(3.65, 3.8, 1.2, 3000, '#e8e8e8');
+    for (let n = 0; n < 40; n++) { const z = 12 * n - (sceneZ % 12) + 1.2; if (z > 400) break; quad(-0.08, 0.08, Math.max(z, 1.2), z + 4, '#f2f2f2'); }
+    for (let n = 0; n < 30; n++) { const z = 40 * n - (sceneZ % 40) + 3; if (z > 800) break; pole(-6, 1, z, '#eee', 0.12); pole(6, 1, z, '#eee', 0.12); }
+  } else {
+    quad(-2.6, 2.6, 1.2, 3000, '#857b70');
+    for (let n = 0; n < 80; n++) { const z = 2.4 * n - (sceneZ % 2.4) + 1.2; if (z > 140) break; quad(-1.3, 1.3, Math.max(z, 1.2), z + 0.3, '#4b3b2d'); }
+    quad(-0.79, -0.72, 1.2, 3000, '#d9dce1'); quad(0.72, 0.79, 1.2, 3000, '#d9dce1');
+    const w0 = P(0, 5.6, 1.5), w1 = P(0, 5.6, 4000); line(w0[0], w0[1], w1[0], w1[1], '#2b2b2b', 1.5);
+    for (let n = 0; n < 40; n++) { const z = 60 * n - (sceneZ % 60) + 3; if (z > 1500) break;
+      pole(3.6, 7, z, '#5b5f63', 0.22); const a = P(3.6, 6.6, z), b = P(-0.3, 6.6, z); line(a[0], a[1], b[0], b[1], '#5b5f63', Math.max(1, f * 0.1 / z)); }
+  }
+}
+function windowView(kind, hy, ppd) { if (!camLive()) drawScenery(kind, hy, ppd); }
+
+/* ---------- piezas de los paneles ---------- */
+function screenBox(x, y, w, h, rows, col) {
+  rrect(x, y, w, h, Math.min(10, h * 0.08)); ctx.fillStyle = '#030405'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#30353c'; ctx.stroke();
+  const n = rows.length, rh = (h - 10) / n, pad = Math.max(7, w * 0.06), stack = w < 140;
+  rows.forEach((r, i) => {
+    const ry = y + 5 + rh * i + rh / 2;
+    if (stack) {
+      text(r[0], x + w / 2, ry - rh * 0.24, clamp(rh * 0.2, 8, 11), '#6f7a86', 'center', 700);
+      text(r[1], x + w / 2, ry + rh * 0.14, clamp(Math.min(rh * 0.4, w / Math.max(4, r[1].length) * 1.5), 9, 24), r[2] || col, 'center', 700, F_MONO);
+    } else {
+      text(r[0], x + pad, ry, clamp(rh * 0.24, 8, 12), '#6f7a86', 'left', 700);
+      text(r[1], x + w - pad, ry, clamp(Math.min(rh * 0.5, (w * 0.62) / Math.max(4, r[1].length) * 1.6), 10, 30), r[2] || col, 'right', 700, F_MONO);
+    }
+    if (i < n - 1) line(x + pad, y + 5 + rh * (i + 1), x + w - pad, y + 5 + rh * (i + 1), '#16191d', 1);
+  });
+}
+function row(k) {
+  const tr = trip(), su = SPEED[spU()], au = ALT[alU()], fd = fDist(tr.dist), h = heading(), vs = fVS(D.vs);
+  const now = new Date();
+  return {
+    dist: ['DISTANCIA', fd.v + ' ' + fd.u], time: ['TIEMPO', fTime(tr.time)], max: ['MÁXIMA', fSpeed(tr.max) + ' ' + su.l],
+    avg: ['PROMEDIO', (tr.moving > 5 ? fSpeed(tr.dist / tr.moving) : '0') + ' ' + su.l],
+    hdg: ['RUMBO', h == null ? '---' : String(Math.round(h) % 360).padStart(3, '0') + '° ' + cardinal(h)],
+    alt: ['ALTITUD', fAlt(D.alt) + ' ' + au.l], vs: ['V. VERT', vs.v + ' ' + vs.u, '#35d0ff'],
+    gs: ['GS', fSpeed(D.speed) + ' ' + su.l, '#4cd964'], trk: ['TRK', h == null ? '---' : String(Math.round(h) % 360).padStart(3, '0') + '°', '#ff4fd8'],
+    clock: ['HORA', String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')],
+    g: ['FUERZA G', Math.hypot(D.gLat, D.gLon).toFixed(2) + ' g'],
+  }[k];
+}
+function compassDial(cx, cy, r) {
+  const fg = ctx.createRadialGradient(cx, cy - r * 0.4, r * 0.1, cx, cy, r * 1.05);
+  fg.addColorStop(0, '#1a1d22'); fg.addColorStop(1, '#050607');
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.04, 0, Math.PI * 2); ctx.fillStyle = fg; ctx.fill(); ctx.lineWidth = r * 0.04; ctx.strokeStyle = '#3b4048'; ctx.stroke();
+  const h = heading();
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-(h || 0) * DEG);
+  for (let d = 0; d < 360; d += 10) {
+    const maj = d % 30 === 0, a = (d - 90) * DEG, c = Math.cos(a), s = Math.sin(a);
+    line(c * r * 0.93, s * r * 0.93, c * r * (maj ? 0.8 : 0.87), s * r * (maj ? 0.8 : 0.87), '#cfd6dd', maj ? r * 0.025 : r * 0.012);
+    if (maj) { const lab = { 0: 'N', 90: 'E', 180: 'S', 270: 'O' }[d] || String(d / 10);
+      ctx.save(); ctx.translate(c * r * 0.64, s * r * 0.64); ctx.rotate(d * DEG);
+      text(lab, 0, 0, lab.length === 1 && isNaN(+lab) ? r * 0.18 : r * 0.12, d === 0 ? '#ff453a' : '#e8edf2', 'center', 700); ctx.restore(); }
+  }
+  ctx.restore();
+  ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.95); ctx.lineTo(cx - r * 0.08, cy - r * 1.12); ctx.lineTo(cx + r * 0.08, cy - r * 1.12); ctx.closePath(); ctx.fillStyle = '#ffb347'; ctx.fill();
+  text(h == null ? '---' : String(Math.round(h) % 360).padStart(3, '0') + '°', cx, cy, r * 0.24, '#ffb347', 'center', 700, F_MONO);
+}
+function hudSymbology(x0, y0, w, h) {
+  const col = '#5dff95', su = SPEED[spU()], hd = heading();
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 3;
+  const cx = x0 + w / 2, cy = y0 + h * 0.52, ppd = h / 30;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-D.roll * DEG); ctx.translate(0, D.pitch * ppd);
+  line(-w, 0, -w * 0.07, 0, col, 2); line(w * 0.07, 0, w, 0, col, 2);
+  for (const p of [-20, -15, -10, -5, 5, 10, 15, 20]) {
+    if (Math.abs(p - D.pitch) > 13) continue;
+    const y = -p * ppd, a = w * 0.07, b = w * 0.17, t = p > 0 ? 6 : -6;
+    ctx.setLineDash(p < 0 ? [6, 5] : []);
+    ctx.beginPath(); ctx.moveTo(-a, y + t); ctx.lineTo(-a, y); ctx.lineTo(-b, y); ctx.moveTo(a, y + t); ctx.lineTo(a, y); ctx.lineTo(b, y);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.stroke(); ctx.setLineDash([]);
+    text(String(Math.abs(p)), -b - 6, y, 12, col, 'right', 700, F_MONO); text(String(Math.abs(p)), b + 6, y, 12, col, 'left', 700, F_MONO);
+  }
+  ctx.restore();
+  // símbolo del avión
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.moveTo(cx - 6, cy); ctx.lineTo(cx - 22, cy); ctx.moveTo(cx + 6, cy); ctx.lineTo(cx + 22, cy); ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy - 14); ctx.stroke();
+  // velocidad y altitud
+  const fs = clamp(h * 0.075, 13, 22), bw = fs * 3.6, bh = fs * 1.5;
+  const sx = x0 + w * 0.2 - bw / 2, ax = x0 + w * 0.8 - bw / 2;
+  ctx.lineWidth = 1.6; ctx.strokeRect(sx, cy - bh / 2, bw, bh); ctx.strokeRect(ax, cy - bh / 2, bw, bh);
+  text(fSpeed(D.speed), sx + bw / 2, cy + 1, fs, col, 'center', 700, F_MONO);
+  text(fAlt(D.alt), ax + bw / 2, cy + 1, fs, col, 'center', 700, F_MONO);
+  text('GS ' + su.l, sx + bw / 2, cy - bh, fs * 0.6, col, 'center', 700, F_MONO);
+  text('ALT ' + ALT[alU()].l, ax + bw / 2, cy - bh, fs * 0.6, col, 'center', 700, F_MONO);
+  const vs = fVS(D.vs); text('VS ' + vs.v, ax + bw / 2, cy + bh * 1.1, fs * 0.6, col, 'center', 700, F_MONO);
+  // cinta de rumbo
+  const ty = y0 + Math.max(16, h * 0.08), tw = w * 0.36, ppdh = tw / 40;
+  if (hd != null) for (let d = Math.floor((hd - 20) / 5) * 5; d <= hd + 20; d += 5) {
+    const x = cx + (d - hd) * ppdh, dd = ((d % 360) + 360) % 360; if (Math.abs(x - cx) > tw / 2) continue;
+    line(x, ty, x, ty + (dd % 10 === 0 ? 8 : 4), col, 1.5);
+    if (dd % 10 === 0) text(String(dd / 10).padStart(2, '0'), x, ty + 17, 11, col, 'center', 700, F_MONO);
+  }
+  text(hd == null ? '---' : String(Math.round(hd) % 360).padStart(3, '0'), cx, ty + 32, 14, col, 'center', 800, F_MONO);
+  ctx.restore();
+}
+function deskPath(pTop, bump) {
+  ctx.beginPath(); ctx.moveTo(0, pTop + bump); ctx.quadraticCurveTo(W / 2, pTop - bump, W, pTop + bump); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+}
+function deskFill(pTop, c1, c2, c3) {
+  const g = ctx.createLinearGradient(0, pTop - 20, 0, H); g.addColorStop(0, c1); g.addColorStop(0.12, c2); g.addColorStop(1, c3); return g;
+}
+
+/* ---------- Cabina Tren ---------- */
+function drawTrenCab() {
+  const land = W > H, pTop = H * (land ? 0.6 : 0.64);
+  windowView('tren', H * 0.42);
+  ctx.fillStyle = '#17191c';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H * 0.11); ctx.quadraticCurveTo(W / 2, H * 0.04, 0, H * 0.11); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W * 0.075, H * 0.095); ctx.lineTo(W * 0.04, pTop + 10); ctx.lineTo(0, pTop + 10); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(W, 0); ctx.lineTo(W * 0.925, H * 0.095); ctx.lineTo(W * 0.96, pTop + 10); ctx.lineTo(W, pTop + 10); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(W * 0.075, H * 0.095); ctx.quadraticCurveTo(W / 2, H * 0.03, W * 0.925, H * 0.095); ctx.lineTo(W * 0.96, pTop); ctx.lineTo(W * 0.04, pTop); ctx.closePath();
+  ctx.strokeStyle = '#050506'; ctx.lineWidth = 5; ctx.stroke();
+  line(W * 0.2, pTop - 8, W * 0.46, pTop - 16, '#0b0c0d', 4);
+  deskPath(pTop, H * 0.03); ctx.fillStyle = deskFill(pTop, '#4a4f56', '#272a2f', '#101113'); ctx.fill();
+  ctx.strokeStyle = '#626870'; ctx.lineWidth = 1.5; ctx.stroke();
+  const L = SA.l + 10, R = W - SA.r - 10, B = H - SA.b - 6, ph = B - pTop;
+  const r = Math.min(ph * 0.4, (R - L) * (land ? 0.13 : 0.2)), cx = W / 2, cy = pTop + ph * 0.55;
+  drawGauge(cx, cy, r, STYLE_PANEL);
+  const gap = Math.max(10, W * 0.015), bh = Math.min(ph * 0.8, r * 2.3), by = cy - bh / 2;
+  const bw = cx - r * 1.12 - gap - L;
+  screenBox(L, by, bw, bh, [row('dist'), row('time'), row('max')], '#7fd4ff');
+  screenBox(cx + r * 1.12 + gap, by, bw, bh, [row('hdg'), row('alt'), row('clock')], '#7fd4ff');
+  // luces de estado
+  const ly = pTop + ph * 0.06 + 4;
+  [['#30d158', D.gpsOk || S.demo], ['#ffd60a', S.limit > 0], ['#ff453a', S.limit > 0 && D.speed > S.limit]].forEach((l, i) => {
+    ctx.beginPath(); ctx.arc(cx - 20 + i * 20, ly, 4, 0, Math.PI * 2); ctx.fillStyle = l[1] ? l[0] : '#2a2d31'; ctx.fill(); });
+}
+
+/* ---------- Cabina Auto ---------- */
+function drawAutoCab() {
+  const land = W > H, pTop = H * (land ? 0.6 : 0.66);
+  windowView('auto', H * 0.44);
+  ctx.fillStyle = '#141518';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H * 0.06); ctx.quadraticCurveTo(W / 2, H * 0.02, 0, H * 0.06); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W * 0.15, 0); ctx.lineTo(W * 0.055, pTop + 10); ctx.lineTo(0, pTop + 10); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(W, 0); ctx.lineTo(W * 0.85, 0); ctx.lineTo(W * 0.945, pTop + 10); ctx.lineTo(W, pTop + 10); ctx.closePath(); ctx.fill();
+  // espejo retrovisor con reloj
+  const mw = Math.min(W * 0.2, 190), mh = mw * 0.32, mx = W / 2 - mw / 2, my = H * 0.035 + 10;
+  line(W / 2, 0, W / 2, my, '#141518', 6);
+  rrect(mx - 4, my - 4, mw + 8, mh + 8, mh * 0.45); ctx.fillStyle = '#141518'; ctx.fill();
+  const mg = ctx.createLinearGradient(0, my, 0, my + mh); mg.addColorStop(0, '#4b535d'); mg.addColorStop(1, '#1d2126');
+  rrect(mx, my, mw, mh, mh * 0.4); ctx.fillStyle = mg; ctx.fill();
+  text(row('clock')[1], W / 2, my + mh / 2 + 1, mh * 0.5, '#e8edf2', 'center', 600, F_DIG);
+  // tablero con cubierta del instrumental
+  const hood = H * 0.075;
+  ctx.beginPath(); ctx.moveTo(0, pTop + H * 0.03); ctx.lineTo(W * 0.27, pTop);
+  ctx.bezierCurveTo(W * 0.31, pTop - hood, W * 0.69, pTop - hood, W * 0.73, pTop);
+  ctx.lineTo(W, pTop + H * 0.03); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = deskFill(pTop - hood, '#2b2e33', '#1a1c1f', '#0b0c0d'); ctx.fill(); ctx.strokeStyle = '#3d4249'; ctx.lineWidth = 1.5; ctx.stroke();
+  const B = H - SA.b - 4, ph = B - pTop;
+  const r = Math.min(ph * 0.4, W * (land ? 0.085 : 0.15)), cy = pTop + ph * 0.35;
+  const cxL = W / 2 - r * 1.75, cxR = W / 2 + r * 1.75;
+  // fondo del instrumental
+  rrect(cxL - r * 1.25, cy - r * 1.2, (cxR - cxL) + r * 2.5, r * 2.45, r * 0.5); ctx.fillStyle = '#050607'; ctx.fill();
+  drawGauge(cxL, cy, r, STYLE_PANEL);
+  compassDial(cxR, cy, r * 0.92);
+  const sw = (cxR - cxL) - r * 2.2;
+  screenBox(W / 2 - sw / 2, cy - r * 0.8, sw, r * 1.6, [row('dist'), row('alt'), row('time')], '#ffb347');
+  // volante
+  const wr = Math.max(W * 0.32, r * 4.2), wy = cy + r * 1.35 + wr;
+  ctx.beginPath(); ctx.arc(W / 2, wy, wr, 0, Math.PI * 2); ctx.lineWidth = Math.max(16, r * 0.38);
+  ctx.strokeStyle = '#0d0e10'; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = '#2c3036';
+  ctx.beginPath(); ctx.arc(W / 2, wy, wr - Math.max(16, r * 0.38) / 2 + 2, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke();
+}
+
+/* ---------- Cabina Avión ---------- */
+function drawAvionCab() {
+  const land = W > H, pTop = H * (land ? 0.6 : 0.62), wy0 = H * 0.1;
+  windowView('avion', wy0 + (pTop - wy0) * 0.52, (pTop - wy0) / 30);
+  hudSymbology(W * 0.08, wy0, W * 0.84, pTop - wy0);
+  ctx.fillStyle = '#1b1d21';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, wy0 + H * 0.02); ctx.lineTo(W * 0.9, wy0); ctx.lineTo(W * 0.1, wy0); ctx.lineTo(0, wy0 + H * 0.02); ctx.closePath(); ctx.fill();
+  // panel superior con luces
+  for (let i = 0; i < 14; i++) { const x = W * 0.25 + i * W * 0.036; ctx.fillStyle = '#2b2f35'; ctx.fillRect(x, wy0 * 0.3, W * 0.022, wy0 * 0.35);
+    if (i % 5 === 2) { ctx.fillStyle = '#ffb347'; ctx.fillRect(x + 2, wy0 * 0.3 + 2, W * 0.022 - 4, 3); } }
+  ctx.fillStyle = '#1b1d21';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W * 0.1, wy0); ctx.lineTo(W * 0.075, pTop); ctx.lineTo(0, pTop); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(W, 0); ctx.lineTo(W * 0.9, wy0); ctx.lineTo(W * 0.925, pTop); ctx.lineTo(W, pTop); ctx.closePath(); ctx.fill();
+  // glareshield
+  ctx.beginPath(); ctx.moveTo(0, pTop - 4); ctx.lineTo(W, pTop - 4); ctx.lineTo(W, pTop + H * 0.05); ctx.quadraticCurveTo(W / 2, pTop + H * 0.075, 0, pTop + H * 0.05); ctx.closePath();
+  ctx.fillStyle = '#0c0d0f'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, pTop + H * 0.05); ctx.quadraticCurveTo(W / 2, pTop + H * 0.075, W, pTop + H * 0.05); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = '#2e3238'; ctx.fill();
+  const L = SA.l + 10, R = W - SA.r - 10, top = pTop + H * 0.075, B = H - SA.b - 6;
+  const s = Math.min(B - top, (R - L - 30) / 3.3), gap = (R - L - s * 3) / 4, y = top + (B - top - s) / 2;
+  for (let i = 0; i < 3; i++) { const x = L + gap + i * (s + gap); rrect(x - 5, y - 5, s + 10, s + 10, 8); ctx.fillStyle = '#16181b'; ctx.fill(); }
+  const x1 = L + gap, x2 = x1 + s + gap, x3 = x2 + s + gap;
+  drawADI(x1, y, s, s);
+  ctx.fillStyle = '#000'; ctx.fillRect(x2, y, s, s); compassDial(x2 + s / 2, y + s / 2 + s * 0.04, s * 0.4);
+  screenBox(x3, y, s, s, [row('gs'), row('alt'), row('vs'), row('trk')], '#e8edf2');
+}
+
 /* ---------- sensores ---------- */
 function hav(la1, lo1, la2, lo2) {
   const R = 6371000, dLa = (la2 - la1) * DEG, dLo = (lo2 - lo1) * DEG;
@@ -605,6 +889,7 @@ function update(dt, now) {
     D.acc = 4; D.gpsOk = true; D.lastFix = now; D.hasMotion = true;
     if (tr.running) { tr.dist += D.raw * dt; tr.max = Math.max(tr.max, D.raw); }
   }
+  sceneZ += D.speed * dt;
   D.speed += (D.raw - D.speed) * clamp(SMOOTH[S.smoothing] * dt * 60, 0, 1);
   if (D.speed < 0.05 && D.raw === 0) D.speed = 0;
   if (!S.demo && now - D.lastFix > 6000) { D.gpsOk = false; if (now - D.lastFix > 12000) { D.raw = 0; } }
@@ -616,6 +901,7 @@ function frame(now) {
   const dt = Math.min(0.25, (now - last) / 1000); last = now;
   update(dt, now);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
   ctx.save();
   if (S.theme === 'hud' && S.mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
   theme().draw();
@@ -635,7 +921,7 @@ setInterval(updateBar, 700);
 
 /* ---------- interfaz ---------- */
 function toast(msg, ms = 2500) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); }
-function setTheme(id) { S.theme = id; saveS(); syncUI(); }
+function setTheme(id) { S.theme = id; saveS(); syncUI(); syncCam(); poke(); }
 function shiftTheme(d) { const i = THEMES.findIndex(t => t.id === S.theme); setTheme(THEMES[(i + d + THEMES.length) % THEMES.length].id); }
 function syncUI() {
   document.documentElement.style.setProperty('--acc', S.accent);
@@ -645,8 +931,10 @@ function syncUI() {
   $('#btnPause').textContent = trip().running ? 'Pausar' : 'Reanudar';
   $('#themeChips').innerHTML = THEMES.map(t => `<button class="chip${t.id === S.theme ? ' on' : ''}" data-t="${t.id}">${t.name}</button>`).join('');
   $('#swatches').innerHTML = ACCENTS.map(c => `<button style="background:${c}" class="${c === S.accent ? 'on' : ''}" data-c="${c}" aria-label="Color"></button>`).join('');
-  ['speedUnit', 'altUnit', 'maxScale', 'smoothing'].forEach(k => $('#' + k).value = String(S[k]));
-  ['sound', 'mirror', 'wake', 'demo'].forEach(k => $('#' + k).checked = !!S[k]);
+  ['speedUnit', 'altUnit', 'smoothing'].forEach(k => $('#' + k).value = String(S[k]));
+  ['sound', 'mirror', 'wake', 'demo', 'camera'].forEach(k => $('#' + k).checked = !!S[k]);
+  const sc = ['auto'].concat(SCALES[spU()]);
+  $('#scaleChips').innerHTML = sc.map(v => `<button class="chip${String(S.maxScale) === String(v) ? ' on' : ''}" data-s="${v}">${v === 'auto' ? 'Automática' : v + ' ' + SPEED[spU()].l}</button>`).join('');
   $('#limit').value = S.limit > 0 ? Math.round(S.limit * SPEED[spU()].f) : '';
   $('#limHint').textContent = 'En ' + SPEED[spU()].l + ' · vacío = desactivada';
 }
@@ -657,7 +945,9 @@ $('#close').onclick = () => $('#sheet').classList.remove('open');
 $('#sheet').addEventListener('click', e => { if (e.target.id === 'sheet') $('#sheet').classList.remove('open'); });
 $('#themeChips').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) setTheme(b.dataset.t); });
 $('#swatches').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { S.accent = b.dataset.c; saveS(); syncUI(); } });
-['speedUnit', 'altUnit', 'maxScale', 'smoothing'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.value; saveS(); syncUI(); }));
+$('#scaleChips').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (b) { S.maxScale = b.dataset.s; saveS(); syncUI(); } });
+$('#camera').addEventListener('change', e => { S.camera = e.target.checked; if (S.camera && camState !== 'on') camState = 'off'; saveS(); syncCam(); });
+['speedUnit', 'altUnit', 'smoothing'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.value; saveS(); syncUI(); }));
 ['sound', 'mirror', 'demo'].forEach(k => $('#' + k).addEventListener('change', e => { S[k] = e.target.checked; if (k === 'demo') { TD = newTrip(); D.raw = 0; D.alt = null; D.gpsHdg = null; } saveS(); syncUI(); }));
 $('#wake').addEventListener('change', e => { S.wake = e.target.checked; saveS(); S.wake ? wake() : release(); });
 $('#limit').addEventListener('change', e => { const v = parseFloat(e.target.value); S.limit = v > 0 ? v / SPEED[spU()].f : 0; saveS(); });
@@ -676,7 +966,12 @@ cv.addEventListener('touchstart', e => { tx0 = e.touches[0].clientX; ty0 = e.tou
 cv.addEventListener('touchend', e => { if (tx0 == null) return; const dx = e.changedTouches[0].clientX - tx0, dy = e.changedTouches[0].clientY - ty0;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftTheme(dx < 0 ? 1 : -1); tx0 = null; }, { passive: true });
 addEventListener('keydown', e => { if (e.key === 'ArrowRight') shiftTheme(1); if (e.key === 'ArrowLeft') shiftTheme(-1); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); else store.set('cabina.trip', TR); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wake(); syncCam(); } else { store.set('cabina.trip', TR); camOff(); } });
+// ocultar controles tras unos segundos sin tocar la pantalla
+let lastPoke = performance.now();
+function poke() { lastPoke = performance.now(); document.body.classList.remove('idle'); }
+addEventListener('touchstart', poke, { passive: true }); addEventListener('mousemove', poke); addEventListener('mousedown', poke);
+setInterval(() => { if (started && performance.now() - lastPoke > 4000 && !$('#sheet').classList.contains('open')) document.body.classList.add('idle'); }, 500);
 
 async function start(demo) {
   unlockAudio();
@@ -687,6 +982,7 @@ async function start(demo) {
   $('#start').style.display = 'none';
   started = true;
   syncUI();
+  syncCam();
   const res = await Promise.all(reqs);
   addEventListener('deviceorientation', onOrient);
   addEventListener('devicemotion', onMotion);
